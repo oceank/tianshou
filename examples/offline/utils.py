@@ -1,6 +1,9 @@
 from typing import Tuple
 
-import d4rl
+# temporal workaround:
+#   d4rl is not used for environments with a discrete-action space
+#   Gymnasium-Robotics usggests to use minari to save and load datasets for d4rl environments
+import minari as d4rl
 import gymnasium as gym
 import h5py
 import numpy as np
