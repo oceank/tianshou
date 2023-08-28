@@ -1,4 +1,5 @@
 import time
+import datetime
 from abc import ABC, abstractmethod
 from collections import defaultdict, deque
 from typing import Any, Callable, DefaultDict, Dict, Optional, Tuple, Union
@@ -234,11 +235,17 @@ class BaseTrainer(ABC):
             assert self.episode_per_test is not None
             assert not isinstance(self.test_collector, AsyncCollector)  # Issue 700
             self.test_collector.reset_stat()
+            self.best_epoch = self.start_epoch
+            # Log test result before training if the training starts from scratch
+            # Otherwise, do not log the initial test result
+            if self.start_epoch == 0:
+                init_test_logger = self.logger
+            else:
+                init_test_logger = None
             test_result = test_episode(
                 self.policy, self.test_collector, self.test_fn, self.start_epoch,
-                self.episode_per_test, self.logger, self.env_step, self.reward_metric
+                self.episode_per_test, init_test_logger, self.env_step, self.reward_metric
             )
-            self.best_epoch = self.start_epoch
             self.best_reward, self.best_reward_std = \
                 test_result["rew"], test_result["rew_std"]
         if self.save_best_fn:
@@ -354,6 +361,7 @@ class BaseTrainer(ABC):
                 self.save_best_fn(self.policy)
         if self.verbose:
             print(
+                f"[{datetime.datetime.now()}] "
                 f"Epoch #{self.epoch}: test_reward: {rew:.6f} ± {rew_std:.6f},"
                 f" best_reward: {self.best_reward:.6f} ± "
                 f"{self.best_reward_std:.6f} in #{self.best_epoch}",

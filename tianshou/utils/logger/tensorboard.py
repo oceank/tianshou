@@ -79,6 +79,18 @@ class TensorboardLogger(BaseLogger):
         return epoch, env_step, gradient_step
 
 
+    def retrieve_info_from_log(self, info_key:str):
+        ea = event_accumulator.EventAccumulator(self.writer.log_dir)
+        ea.Reload()
+        assert info_key in ea.Tags()['scalars'], f"The tag {info_key} not found in log."
+
+        info_log = ea.scalars.Items(info_key)
+        info_dict = {}
+        for event in info_log:
+            info_dict[event.step] = event.value
+
+        return info_dict
+
 class BasicLogger(TensorboardLogger):
     """BasicLogger has changed its name to TensorboardLogger in #427.
 
