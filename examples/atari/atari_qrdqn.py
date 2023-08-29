@@ -21,51 +21,31 @@ from tianshou.trainer import offpolicy_trainer
 from tianshou.utils import TensorboardLogger, WandbLogger
 from tianshou.utils.net.common import DataParallelNet
 
-
-def set_determenistic_mode(SEED, disable_cudnn):
-    os.environ['PYTHONHASHSEED'] = str(SEED)
-    torch.manual_seed(SEED)                         # Seed the RNG for all devices (both CPU and CUDA).
-    random.seed(SEED)                               # Set python seed for custom operators.
-    rs = RandomState(MT19937(SeedSequence(SEED)))   # If any of the libraries or code rely on NumPy seed the global NumPy RNG.
-    np.random.seed(SEED)
-    torch.cuda.manual_seed(SEED)                    # Set a fixed seed for the current GPU.             
-    torch.cuda.manual_seed_all(SEED)                # If you are using multi-GPU. In case of one GPU, you can use # torch.cuda.manual_seed(SEED).
-    
-    if not disable_cudnn:
-        torch.backends.cudnn.benchmark = False      # Causes cuDNN to deterministically select an algorithm,
-                                                    # possibly at the cost of reduced performance
-                                                    # (the algorithm itself may be nondeterministic).
-        torch.backends.cudnn.deterministic = True   # Causes cuDNN to use a deterministic convolution algorithm,
-                                                    # but may slow down performance.
-                                                    # It will not guarantee that your training process is deterministic
-                                                    # if you are using other libraries that may use nondeterministic algorithms.
-    else:
-        torch.backends.cudnn.enabled = False        # Controls whether cuDNN is enabled or not.
-                                                    # If you want to enable cuDNN, set it to True.
+from examples.atari.utils import set_torch_seed, set_determenistic_mode
 
 def get_args():
     parser = argparse.ArgumentParser()
     parser.add_argument("--task", type=str, default="PongNoFrameskip-v4")
     parser.add_argument("--seed", type=int, default=0)
     parser.add_argument("--scale-obs", type=int, default=0)
-    parser.add_argument("--eps-test", type=float, default=0.005)
-    parser.add_argument("--eps-train", type=float, default=1.)
-    parser.add_argument("--eps-train-final", type=float, default=0.05)
+    parser.add_argument("--eps-test", type=float, default=0.001)
+    parser.add_argument("--eps-train", type=float, default=1.0)
+    parser.add_argument("--eps-train-final", type=float, default=0.01)
     parser.add_argument("--exploration-duration", type=int, default=1000000)
-    parser.add_argument("--buffer-size", type=int, default=100000)
-    parser.add_argument("--replay-buffer-min-size", type=int, default=500)
-    parser.add_argument("--lr", type=float, default=0.0001)
+    parser.add_argument("--buffer-size", type=int, default=1000000)
+    parser.add_argument("--replay-buffer-min-size", type=int, default=50000)
+    parser.add_argument("--lr", type=float, default=0.00005)
     parser.add_argument("--gamma", type=float, default=0.99)
     parser.add_argument("--num-quantiles", type=int, default=200)
-    parser.add_argument("--n-step", type=int, default=3)
-    parser.add_argument("--target-update-freq", type=int, default=500)
+    parser.add_argument("--n-step", type=int, default=1)
+    parser.add_argument("--target-update-freq", type=int, default=5000)
     parser.add_argument("--epoch", type=int, default=100)
     parser.add_argument("--early-stop", type=bool, default=False)
     parser.add_argument("--step-per-epoch", type=int, default=100000)
-    parser.add_argument("--step-per-collect", type=int, default=10)
-    parser.add_argument("--update-per-step", type=float, default=0.1)
+    parser.add_argument("--step-per-collect", type=int, default=4)
+    parser.add_argument("--update-per-step", type=float, default=0.25)
     parser.add_argument("--batch-size", type=int, default=32)
-    parser.add_argument("--training-num", type=int, default=10)
+    parser.add_argument("--training-num", type=int, default=4)
     parser.add_argument("--test-num", type=int, default=10)
     parser.add_argument("--logdir", type=str, default="log")
     parser.add_argument("--show-progress", action="store_true")
@@ -125,6 +105,7 @@ def test_qrdqn(args=get_args()):
 
 
     # define model
+    set_torch_seed(args.seed)
     if torch.cuda.is_available and args.use_multi_gpus:
         assert torch.cuda.device_count() > 1, f"The available number of GPUs ({torch.cuda.device_count()}) < 2"    
         net = DataParallelNet(QRDQN(*args.state_shape, args.action_shape, args.num_quantiles, device=None)).to(args.device)
@@ -242,6 +223,7 @@ def test_qrdqn(args=get_args()):
         watch()
         exit(0)
 
+    np.random.seed(args.seed)
     # pre-collect at least 50000 transitions with random action before training
     # replay_buffer_min_size = 50000
     train_collector.collect(n_step=args.replay_buffer_min_size, random=True)
