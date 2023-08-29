@@ -271,6 +271,7 @@ class BasePolicy(ABC, nn.Module):
         """
         if buffer is None:
             return {}
+        print(f"[policy_update] {np.random.get_state()[1][0]}")
         batch, indices = buffer.sample(sample_size)
         self.updating = True
         batch = self.process_fn(batch, buffer, indices)

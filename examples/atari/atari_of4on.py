@@ -14,7 +14,7 @@ from numpy.random import MT19937
 from numpy.random import RandomState, SeedSequence
 import torch
 from atari_network import QRDQN
-from atari_wrapper import make_atari_env
+from atari_wrapper import make_atari_env, make_atari_env_for_testing_using_envpool
 from torch.utils.tensorboard import SummaryWriter
 
 from tianshou.data import Collector, VectorReplayBuffer
@@ -23,28 +23,7 @@ from tianshou.trainer import offpolicy_trainer, offline_trainer
 from tianshou.utils import TensorboardLogger, WandbLogger
 #from tianshou.utils.net.common import DataParallelNet
 
-def set_determenistic_mode(SEED, disable_cudnn):
-    os.environ['PYTHONHASHSEED'] = str(SEED)
-    torch.manual_seed(SEED)                         # Seed the RNG for all devices (both CPU and CUDA).
-    random.seed(SEED)                               # Set python seed for custom operators.
-    rs = RandomState(MT19937(SeedSequence(SEED)))   # If any of the libraries or code rely on NumPy seed the global NumPy RNG.
-    np.random.seed(SEED)
-    torch.cuda.manual_seed(SEED)                    # Set a fixed seed for the current GPU.             
-    torch.cuda.manual_seed_all(SEED)                # If you are using multi-GPU. In case of one GPU, you can use # torch.cuda.manual_seed(SEED).
-    
-    if not disable_cudnn:
-        torch.backends.cudnn.benchmark = False      # Causes cuDNN to deterministically select an algorithm,
-                                                    # possibly at the cost of reduced performance
-                                                    # (the algorithm itself may be nondeterministic).
-        torch.backends.cudnn.deterministic = True   # Causes cuDNN to use a deterministic convolution algorithm,
-                                                    # but may slow down performance.
-                                                    # It will not guarantee that your training process is deterministic
-                                                    # if you are using other libraries that may use nondeterministic algorithms.
-    else:
-        torch.backends.cudnn.enabled = False        # Controls whether cuDNN is enabled or not.
-                                                    # If you want to enable cuDNN, set it to True.
-
-
+from examples.atari.utils import set_torch_seed, set_determenistic_mode
 
 def get_args():
     parser = argparse.ArgumentParser()
@@ -117,7 +96,11 @@ def get_args():
 
     return parser.parse_args()
 
+def debug_np_seeding(loc):
+    print(f"[{loc}] debug_np_seeding： {np.random.get_state()[1][0]}")
+
 def test_of4on(args=get_args()):
+    debug_np_seeding(0)
     print(f"[{datetime.datetime.now()}] experiment configuration:", flush=True)
     pprint.pprint(vars(args), indent=4)
     sys.stdout.flush()
@@ -126,6 +109,7 @@ def test_of4on(args=get_args()):
     # seed
     disable_cudnn = False
     set_determenistic_mode(args.seed, disable_cudnn)
+    debug_np_seeding(1)
 
     # create envs
     env, train_envs, test_envs = make_atari_env(
@@ -136,9 +120,20 @@ def test_of4on(args=get_args()):
         scale=args.scale_obs,
         frame_stack=args.frames_stack,
     )
+    debug_np_seeding(2)
     env.action_space.seed(args.seed)
     train_envs.action_space.seed(args.seed)
     test_envs.action_space.seed(args.seed)
+    debug_np_seeding(3)
+
+    # testing envs for offline learning
+    # The reason for creating two testing envs is because the instantiation of Collector
+    # will reset the input envs, which will cause the testing envs to be reset twice and
+    # become different from that in the experiment of baseline (qrdqn).
+    test_envs_of = make_atari_env_for_testing_using_envpool(
+        args.task, args.seed, args.test_num, args.frames_stack)
+    test_envs_of.action_space.seed(args.seed)
+    debug_np_seeding(4)
 
     args.state_shape = env.observation_space.shape or env.observation_space.n
     args.action_shape = env.action_space.shape or env.action_space.n
@@ -149,6 +144,7 @@ def test_of4on(args=get_args()):
    
     # initialize qrdqn and cql (qrdqn)
     def create_offline_policy(current_best_online_policy_path=""):
+        set_torch_seed(args.seed)
         offline_model = QRDQN(*args.state_shape, args.action_shape, args.offline_num_quantiles, args.device)
         offline_optim = torch.optim.Adam(offline_model.parameters(), lr=args.offline_lr, eps=0.01/32)
         offline_policy = DiscreteCQLPolicy(
@@ -172,6 +168,7 @@ def test_of4on(args=get_args()):
         return offline_policy
 
     def create_online_policy(previous_phase_best_offline_policy_path=""):
+        set_torch_seed(args.seed)
         online_model = QRDQN(*args.state_shape, args.action_shape, args.online_num_quantiles, args.device)
         online_optim = torch.optim.Adam(online_model.parameters(), lr=args.online_lr, eps=0.01/32)
         online_policy = QRDQNPolicy(
@@ -191,7 +188,9 @@ def test_of4on(args=get_args()):
             online_policy.sync_weight()
         return online_policy
 
+    debug_np_seeding(5)
     online_policy = create_online_policy()
+    debug_np_seeding(6)
     offline_policy = create_offline_policy()
 
     # load previously trained policies
@@ -202,6 +201,7 @@ def test_of4on(args=get_args()):
         offline_policy.load_state_dict(torch.load(offline_policy_path, map_location=args.device))
         print(f"[{datetime.datetime.now()}] Loaded agent from: {args.resume_path}", flush=True)
    
+    debug_np_seeding(6)
     # replay buffer: `save_last_obs` and `stack_num` can be removed together
     # when you have enough RAM
     buffer = VectorReplayBuffer(
@@ -212,9 +212,12 @@ def test_of4on(args=get_args()):
         stack_num=args.frames_stack
     )
     # collector
+    debug_np_seeding(7)
     online_train_collector = Collector(online_policy, train_envs, buffer, exploration_noise=True)
+    debug_np_seeding(8)
     online_test_collector  = Collector(online_policy, test_envs, exploration_noise=True)
-    offline_test_collector = Collector(offline_policy, test_envs, exploration_noise=True)
+    debug_np_seeding(9)
+    offline_test_collector = Collector(offline_policy, test_envs_of, exploration_noise=True)
 
     # logging
     def create_logger(log_name, experiment_config):
@@ -238,6 +241,7 @@ def test_of4on(args=get_args()):
 
     # bt1: offline learing bootstrap online learing
     # bt2: offline and online learnings bootstrap each other
+    debug_np_seeding(10)
     bootstrap_type = "bt1" if not args.bootstrap_offline_with_online else "bt2"
     args.algo_name = f"cql-qrdqn-{bootstrap_type}"
     if args.offline_epoch_match_consumed_online_steps:
@@ -250,7 +254,7 @@ def test_of4on(args=get_args()):
     # used to bootstrap offline learning in each phase
     current_best_online_policy_path = os.path.join(online_logger.writer.log_dir, "online_policy.pth")
 
-
+    debug_np_seeding(11)
     # Hook functions for training and testing
     def save_best_fn(policy, policy_type:str, log_path:str):
         policy_filename = f"{policy_type}_policy.pth"
@@ -289,6 +293,7 @@ def test_of4on(args=get_args()):
     def save_checkpoint_fn(epoch, env_step, gradient_step):
         return False
 
+    debug_np_seeding(12)
     def test_fn(epoch, env_step, policy_type:str):
         if policy_type == "online":
             policy = online_policy
@@ -344,11 +349,14 @@ def test_of4on(args=get_args()):
     # The offline learning policy can be boostraped by the online learning policy in the current phase.
     phase_epochs = [2,2,2] #[20, 10, 10, 10] # [2, 1, 1, 1]
 
-
+    debug_np_seeding(13)
+    np.random.seed(args.seed)
+    debug_np_seeding(14)
     # pre-collect at least 50000 transitions with random action before training
     # replay_buffer_min_size = 50000
     print(f"[{datetime.datetime.now()}] Start pre-collecting {args.replay_buffer_min_size} random transitions into replay buffer...", flush=True)
     online_train_collector.collect(n_step=args.replay_buffer_min_size, random=True)
+    debug_np_seeding(15)
 
     phase_max_epoch = 0
     previous_phase_best_offline_policy_path = ""
@@ -371,6 +379,7 @@ def test_of4on(args=get_args()):
             online_test_collector.policy = online_policy
 
         # online training
+        debug_np_seeding(16)
         online_training_result = offpolicy_trainer(
             online_policy,
             online_train_collector,

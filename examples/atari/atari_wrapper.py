@@ -366,3 +366,16 @@ def make_atari_env(task, seed, training_num, test_num, **kwargs):
         train_envs.seed(seed)
         test_envs.seed(seed)
     return env, train_envs, test_envs
+
+# Used by of4on for creating test envs for offline learning
+def make_atari_env_for_testing_using_envpool(task, seed, num_envs, stack_num):
+    envs = envpool.make_gymnasium(
+        task.replace("NoFrameskip-v4", "-v5"),
+        num_envs=num_envs,
+        seed=seed,
+        episodic_life=False,
+        reward_clip=False,
+        stack_num=stack_num,
+    )
+    envs.seed(seed)
+    return envs
