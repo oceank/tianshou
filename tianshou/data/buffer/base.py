@@ -278,7 +278,7 @@ class ReplayBuffer:
         Return all available indices in the buffer if batch_size is 0; return an empty
         numpy array if batch_size < 0 or no available index can be sampled.
         """
-        print(f"[sample_indices: buffer] {np.random.get_state()[1][0]}")
+        #print(f"[sample_indices: buffer] {np.random.get_state()[1][0]}")
         if self.stack_num == 1 or not self._sample_avail:  # most often case
             if batch_size > 0:
                 return np.random.choice(self._size, batch_size)
@@ -311,7 +311,7 @@ class ReplayBuffer:
 
         :return: Sample data and its corresponding index inside the buffer.
         """
-        print(f"[sample in buffer] {np.random.get_state()[1][0]}")
+        #print(f"[sample in buffer] {np.random.get_state()[1][0]}")
         indices = self.sample_indices(batch_size)
         return self[indices], indices
 

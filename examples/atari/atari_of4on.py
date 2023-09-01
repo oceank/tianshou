@@ -382,7 +382,9 @@ def test_of4on(args=get_args()):
         print(f"[{datetime.datetime.now()}] Finish phase {phase_id} online training ...", flush=True)
         pprint.pprint(online_training_result)
         sys.stdout.flush()
-
+        # debugging seeding issue for the of4on online learning in the 1st phase against the baseline
+        #if phase_id == 1:
+        #    exit(0)
 
         # [offline training]
         print(f"[{datetime.datetime.now()}] Start phase {phase_id} offline training ...", flush=True)
