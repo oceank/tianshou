@@ -333,6 +333,8 @@ def make_atari_env(task, seed, training_num, test_num, **kwargs):
             episodic_life=True,
             reward_clip=True,
             stack_num=kwargs.get("frame_stack", 4),
+            num_threads=training_num,
+            thread_affinity_offset=0,
         )
         test_envs = envpool.make_gymnasium(
             task.replace("NoFrameskip-v4", "-v5"),
@@ -341,6 +343,8 @@ def make_atari_env(task, seed, training_num, test_num, **kwargs):
             episodic_life=False,
             reward_clip=False,
             stack_num=kwargs.get("frame_stack", 4),
+            num_threads=test_num,
+            thread_affinity_offset=0,
         )
     else:
         warnings.warn(
@@ -376,5 +380,7 @@ def make_atari_env_for_testing_using_envpool(task, seed, num_envs, stack_num):
         episodic_life=False,
         reward_clip=False,
         stack_num=stack_num,
+        num_threads=num_envs,
+        thread_affinity_offset=0,
     )
     return envs
