@@ -377,5 +377,4 @@ def make_atari_env_for_testing_using_envpool(task, seed, num_envs, stack_num):
         reward_clip=False,
         stack_num=stack_num,
     )
-    envs.seed(seed)
     return envs
