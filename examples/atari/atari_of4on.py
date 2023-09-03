@@ -70,6 +70,7 @@ def get_args():
     parser.add_argument("--min-q-weight", type=float, default=4.0)
     # offline for online
     parser.add_argument("--num_phases", type=int, default=4) # additional code supported is needed
+    parser.add_argument("--reset-replay-buffer-per-phase", action="store_true")
     parser.add_argument("--offline-epoch-match-consumed-online-steps", action="store_true")
     parser.add_argument("--bootstrap-offline-with-online", action="store_true")
     
@@ -113,8 +114,6 @@ def test_of4on(args=get_args()):
     set_determenistic_mode(args.seed, disable_cudnn)
 
     # create envs
-    train_env_num_threads = 1
-    test_env_num_threads = 1
     env, train_envs, test_envs = make_atari_env(
         args.task,
         args.seed,
@@ -340,7 +339,7 @@ def test_of4on(args=get_args()):
     # Each phase starts with online learning, ends with offline learning
     # Sarting the second phase, each online learning policy will be boostraped by the offline learning policy in the previous phase
     # When the online learning finishes in the phase, the offline learning starts with the current replay buffer.
-    # The offline learning policy can be boostraped by the online learning policy in the current phase.
+    # The offline learning policy can be boostraped by the online learning policy in the current phase.:wq
     phase_epochs = [2, 2, 2] #[20, 10, 10, 10] # [2, 1, 1, 1], [3,3] for testing
 
     # pre-collect at least 50000 transitions with random action before training
@@ -361,8 +360,19 @@ def test_of4on(args=get_args()):
         # the actuall number of epochs for the current phase is phase_epoch
         phase_max_epoch += phase_epoch
 
-        # bootstrap from the previous offline learning starts from the second phase
+        # bootstrapping from the previous offline learning starts from the second phase
         if phase_id > 1:
+            if args.reset_replay_buffer_per_phase:
+                online_train_collector.reset_buffer()
+                # Since we are going to copy the best offline policy from the previous phase
+                # to initialize the online policy of the current phase, we here initialize the
+                # replay buffer using the online policy of the last phase such that a certain
+                # degree of exploration benefit originated from the online policy is kept and
+                # passed to the current phase. Since offline learning RL tends to be conservative
+                # and thus may lose some exploration preference of the previous online policy.
+                online_train_collector.collect(n_step=args.replay_buffer_min_size, random=False)
+
+            # a fresh new optimizer is created inside the function call.
             online_policy = create_online_policy(previous_phase_best_offline_policy_path)
             # When creating a new online_policy instance, the follwing relinkings are needed
             online_train_collector.policy = online_policy
