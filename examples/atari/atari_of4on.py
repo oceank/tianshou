@@ -17,7 +17,7 @@ from atari_network import QRDQN
 from atari_wrapper import make_atari_env, make_atari_env_for_testing_using_envpool
 from torch.utils.tensorboard import SummaryWriter
 
-from tianshou.data import Collector, VectorReplayBuffer
+from tianshou.data import AsyncCollector, Collector, VectorReplayBuffer
 from tianshou.policy import QRDQNPolicy, DiscreteCQLPolicy
 from tianshou.trainer import offpolicy_trainer, offline_trainer
 from tianshou.utils import TensorboardLogger, WandbLogger
@@ -27,6 +27,9 @@ from examples.atari.utils import set_torch_seed, set_determenistic_mode
 
 def get_args():
     parser = argparse.ArgumentParser()
+    parser.add_argument("--torch_num_threads", type=int, default=2)
+    parser.add_argument("--train_env_num_threads", type=int, default=4)
+    parser.add_argument("--test_env_num_threads", type=int, default=10)
     parser.add_argument("--task", type=str, default="PongNoFrameskip-v4")
     parser.add_argument("--seed", type=int, default=0)
     parser.add_argument(
@@ -66,6 +69,7 @@ def get_args():
     parser.add_argument("--offline-batch-size", type=int, default=32)
     parser.add_argument("--min-q-weight", type=float, default=4.0)
     # offline for online
+    parser.add_argument("--num_phases", type=int, default=4) # additional code supported is needed
     parser.add_argument("--offline-epoch-match-consumed-online-steps", action="store_true")
     parser.add_argument("--bootstrap-offline-with-online", action="store_true")
     
@@ -97,6 +101,8 @@ def get_args():
     return parser.parse_args()
 
 def test_of4on(args=get_args()):
+    torch.set_num_threads(args.torch_num_threads)
+    
     print(f"[{datetime.datetime.now()}] experiment configuration:", flush=True)
     pprint.pprint(vars(args), indent=4)
     sys.stdout.flush()
@@ -107,11 +113,15 @@ def test_of4on(args=get_args()):
     set_determenistic_mode(args.seed, disable_cudnn)
 
     # create envs
+    train_env_num_threads = 1
+    test_env_num_threads = 1
     env, train_envs, test_envs = make_atari_env(
         args.task,
         args.seed,
         args.online_training_num,
         args.test_num,
+        train_env_num_threads = args.train_env_num_threads,
+        test_env_num_threads = args.test_env_num_threads,
         scale=args.scale_obs,
         frame_stack=args.frames_stack,
     )
@@ -124,7 +134,8 @@ def test_of4on(args=get_args()):
     # will reset the input envs, which will cause the testing envs to be reset twice and
     # become different from that in the experiment of baseline (qrdqn).
     test_envs_of = make_atari_env_for_testing_using_envpool(
-        args.task, args.seed, args.test_num, args.frames_stack)
+        args.task, args.seed, args.test_num, args.frames_stack,
+        num_threads=args.test_env_num_threads)
     test_envs_of.action_space.seed(args.seed)
 
     args.state_shape = env.observation_space.shape or env.observation_space.n
@@ -330,7 +341,7 @@ def test_of4on(args=get_args()):
     # Sarting the second phase, each online learning policy will be boostraped by the offline learning policy in the previous phase
     # When the online learning finishes in the phase, the offline learning starts with the current replay buffer.
     # The offline learning policy can be boostraped by the online learning policy in the current phase.
-    phase_epochs = [2,2,2] #[20, 10, 10, 10] # [2, 1, 1, 1]
+    phase_epochs = [20, 10, 10, 10] # [2, 1, 1, 1], [3,3] for testing
 
     # pre-collect at least 50000 transitions with random action before training
     # replay_buffer_min_size = 50000
@@ -382,9 +393,6 @@ def test_of4on(args=get_args()):
         print(f"[{datetime.datetime.now()}] Finish phase {phase_id} online training ...", flush=True)
         pprint.pprint(online_training_result)
         sys.stdout.flush()
-        # debugging seeding issue for the of4on online learning in the 1st phase against the baseline
-        #if phase_id == 1:
-        #    exit(0)
 
         # [offline training]
         print(f"[{datetime.datetime.now()}] Start phase {phase_id} offline training ...", flush=True)

@@ -25,6 +25,9 @@ from examples.atari.utils import set_torch_seed, set_determenistic_mode
 
 def get_args():
     parser = argparse.ArgumentParser()
+    parser.add_argument("--torch_num_threads", type=int, default=2)
+    parser.add_argument("--train_env_num_threads", type=int, default=4)
+    parser.add_argument("--test_env_num_threads", type=int, default=10)
     parser.add_argument("--task", type=str, default="PongNoFrameskip-v4")
     parser.add_argument("--seed", type=int, default=0)
     parser.add_argument("--scale-obs", type=int, default=0)
@@ -75,6 +78,8 @@ def get_args():
 
 
 def test_qrdqn(args=get_args()):
+    torch.set_num_threads(args.torch_num_threads)
+
     print(f"[{datetime.datetime.now()}] experiment configuration:", flush=True)
     pprint.pprint(vars(args), indent=4)
     sys.stdout.flush()
@@ -90,6 +95,8 @@ def test_qrdqn(args=get_args()):
         args.seed,
         args.training_num,
         args.test_num,
+        train_env_num_threads = args.train_env_num_threads,
+        test_env_num_threads = args.test_env_num_threads,
         scale=args.scale_obs,
         frame_stack=args.frames_stack,
     )

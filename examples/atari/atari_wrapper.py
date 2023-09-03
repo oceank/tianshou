@@ -312,7 +312,10 @@ def wrap_deepmind(
     return env
 
 
-def make_atari_env(task, seed, training_num, test_num, **kwargs):
+def make_atari_env(
+    task, seed, training_num, test_num,
+    training_env_num_threads=1, test_env_num_threads=1,
+    **kwargs):
     """Wrapper function for Atari env.
 
     If EnvPool is installed, it will automatically switch to EnvPool's Atari env.
@@ -333,8 +336,9 @@ def make_atari_env(task, seed, training_num, test_num, **kwargs):
             episodic_life=True,
             reward_clip=True,
             stack_num=kwargs.get("frame_stack", 4),
-            num_threads=training_num,
-            thread_affinity_offset=0,
+            #batch_size = training_num,
+            num_threads=training_env_num_threads,
+            #thread_affinity_offset=0,
         )
         test_envs = envpool.make_gymnasium(
             task.replace("NoFrameskip-v4", "-v5"),
@@ -343,8 +347,8 @@ def make_atari_env(task, seed, training_num, test_num, **kwargs):
             episodic_life=False,
             reward_clip=False,
             stack_num=kwargs.get("frame_stack", 4),
-            num_threads=test_num,
-            thread_affinity_offset=0,
+            num_threads=test_env_num_threads,
+            #thread_affinity_offset=0,
         )
     else:
         warnings.warn(
@@ -372,7 +376,7 @@ def make_atari_env(task, seed, training_num, test_num, **kwargs):
     return env, train_envs, test_envs
 
 # Used by of4on for creating test envs for offline learning
-def make_atari_env_for_testing_using_envpool(task, seed, num_envs, stack_num):
+def make_atari_env_for_testing_using_envpool(task, seed, num_envs, stack_num, num_threads=1):
     envs = envpool.make_gymnasium(
         task.replace("NoFrameskip-v4", "-v5"),
         num_envs=num_envs,
@@ -380,7 +384,7 @@ def make_atari_env_for_testing_using_envpool(task, seed, num_envs, stack_num):
         episodic_life=False,
         reward_clip=False,
         stack_num=stack_num,
-        num_threads=num_envs,
-        thread_affinity_offset=0,
+        num_threads=num_threads,
+        #thread_affinity_offset=0,
     )
     return envs
