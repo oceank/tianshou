@@ -25,9 +25,9 @@ from examples.atari.utils import set_torch_seed, set_determenistic_mode
 
 def get_args():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--torch_num_threads", type=int, default=2)
-    parser.add_argument("--train_env_num_threads", type=int, default=4)
-    parser.add_argument("--test_env_num_threads", type=int, default=10)
+    parser.add_argument("--torch-num-threads", type=int, default=2)
+    parser.add_argument("--train-env-num-threads", type=int, default=4)
+    parser.add_argument("--test-env-num-threads", type=int, default=10)
     parser.add_argument("--task", type=str, default="PongNoFrameskip-v4")
     parser.add_argument("--seed", type=int, default=0)
     parser.add_argument("--scale-obs", type=int, default=0)
