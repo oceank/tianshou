@@ -71,6 +71,7 @@ def get_args():
     # offline for online
     parser.add_argument("--num_phases", type=int, default=4) # additional code supported is needed
     parser.add_argument("--reset-replay-buffer-per-phase", action="store_true")
+    parser.add_argument("--random-exploration-before-each-phase", action="store_true") # for phases with a id > 1
     parser.add_argument("--offline-epoch-match-consumed-online-steps", action="store_true")
     parser.add_argument("--bootstrap-offline-with-online", action="store_true")
     
@@ -344,7 +345,7 @@ def test_of4on(args=get_args()):
 
     # pre-collect at least 50000 transitions with random action before training
     # replay_buffer_min_size = 50000
-    print(f"[{datetime.datetime.now()}] Start pre-collecting {args.replay_buffer_min_size} random transitions into replay buffer...", flush=True)
+    print(f"[{datetime.datetime.now()}] Initial exploration of phase 1 using random policy: collecting {args.replay_buffer_min_size} transitions...", flush=True)
     online_train_collector.collect(n_step=args.replay_buffer_min_size, random=True)
 
     phase_max_epoch = 0
@@ -363,6 +364,7 @@ def test_of4on(args=get_args()):
         # bootstrapping from the previous offline learning starts from the second phase
         if phase_id > 1:
             if args.reset_replay_buffer_per_phase:
+                print(f"[{datetime.datetime.now()}] Reset replay buffer for the phase {phase_id}...", flush=True)
                 online_train_collector.reset_buffer()
                 # Since we are going to copy the best offline policy from the previous phase
                 # to initialize the online policy of the current phase, we here initialize the
@@ -370,7 +372,12 @@ def test_of4on(args=get_args()):
                 # degree of exploration benefit originated from the online policy is kept and
                 # passed to the current phase. Since offline learning RL tends to be conservative
                 # and thus may lose some exploration preference of the previous online policy.
-                online_train_collector.collect(n_step=args.replay_buffer_min_size, random=False)
+                if args.random_exploration_before_each_phase:
+                    exploration_policy_name = "random policy"
+                else:
+                    exploration_policy_name = f"online policy of phase {phase_id-1}"
+                print(f"[{datetime.datetime.now()}] Initial exploration of phase {phase_id} using {exploration_policy_name}: collecting {args.replay_buffer_min_size} transitions...", flush=True)
+                online_train_collector.collect(n_step=args.replay_buffer_min_size, random=args.random_exploration_before_each_phase)
 
             # a fresh new optimizer is created inside the function call.
             online_policy = create_online_policy(previous_phase_best_offline_policy_path)
