@@ -239,10 +239,9 @@ def test_of4on(args=get_args()):
             logger.load(writer)
         return logger
 
-    # bt1: offline learing bootstrap online learing
-    # bt2: offline and online learnings bootstrap each other
-    bootstrap_type = "bt1" if not args.bootstrap_offline_with_online else "bt2"
-    args.algo_name = f"cql-qrdqn-{bootstrap_type}"
+
+    experience_collection_type = f"mecS{args.online_policy_collecting_ratio}E{args.online_policy_collecting_ratio_final}"
+    args.algo_name = f"cql-qrdqn-{experience_collection_type}"
     if args.offline_epoch_match_consumed_online_steps:
         args.algo_name += "-of5grad"
     now = datetime.datetime.now().strftime("%y%m%d-%H%M%S")
