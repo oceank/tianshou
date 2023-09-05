@@ -671,3 +671,60 @@ class AsyncCollector(Collector):
             "rew_std": rew_std,
             "len_std": len_std,
         }
+
+
+class Of4OnCollector(Collector):
+    def __init__(
+        self,
+        online_policy: BasePolicy,
+        offline_policy: BasePolicy,
+        collecting_policy: BasePolicy,
+        env: Union[gym.Env, BaseVectorEnv],
+        buffer: Optional[ReplayBuffer] = None,
+        preprocess_fn: Optional[Callable[..., Batch]] = None,
+        exploration_noise: bool = False,
+    ) -> None:
+        super().__init__(
+            collecting_policy,
+            env,
+            buffer,
+            preprocess_fn,
+            exploration_noise,
+        )
+        self.online_policy = online_policy
+        self.offline_policy = offline_policy
+        self.online_policy_collecting_ratio = 0.5
+
+    def set_online_policy_collecting_ratio(self, ratio):
+        self.online_policy_collecting_ratio = ratio
+
+    def set_collecting_policy(self):
+        prob = np.random.random()
+        if prob <= self.online_policy_collecting_ratio:
+            self.policy = self.online_policy
+        else:
+            self.policy = self.offline_policy
+
+    def collect(
+        self,
+        n_step: Optional[int] = None,
+        n_episode: Optional[int] = None,
+        random: bool = False,
+        render: Optional[float] = None,
+        no_grad: bool = True,
+        gym_reset_kwargs: Optional[Dict[str, Any]] = None,
+    ) -> Dict[str, Any]:
+        # setting up collecting policy
+        if not random:
+            self.set_collecting_policy()
+
+        # call collect() of the base class
+        result = super().collect(
+            n_step,
+            n_episode,
+            random,
+            render,
+            no_grad,
+            gym_reset_kwargs,
+        )
+        return result

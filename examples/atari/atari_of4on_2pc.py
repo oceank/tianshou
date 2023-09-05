@@ -17,7 +17,7 @@ from atari_network import QRDQN
 from atari_wrapper import make_atari_env, make_atari_env_for_testing_using_envpool
 from torch.utils.tensorboard import SummaryWriter
 
-from tianshou.data import AsyncCollector, Collector, VectorReplayBuffer
+from tianshou.data import Of4OnCollector, Collector, VectorReplayBuffer
 from tianshou.policy import QRDQNPolicy, DiscreteCQLPolicy
 from tianshou.trainer import offpolicy_trainer, offline_trainer
 from tianshou.utils import TensorboardLogger, WandbLogger
@@ -70,8 +70,8 @@ def get_args():
     parser.add_argument("--min-q-weight", type=float, default=4.0)
     # offline for online
     parser.add_argument("--num-phases", type=int, default=4) # additional code supported is needed
-    parser.add_argument("--reset-replay-buffer-per-phase", action="store_true")
-    parser.add_argument("--random-exploration-before-each-phase", action="store_true") # for phases with a id > 1
+    parser.add_argument("--online-policy-collecting-ratio", type=float, default=0.75)
+    parser.add_argument("--online-policy-collecting-ratio_final", type=float, default=0.75)
     parser.add_argument("--offline-epoch-match-consumed-online-steps", action="store_true")
     parser.add_argument("--bootstrap-offline-with-online", action="store_true")
     
@@ -212,7 +212,10 @@ def test_of4on(args=get_args()):
         stack_num=args.frames_stack
     )
     # collector
-    online_train_collector = Collector(online_policy, train_envs, buffer, exploration_noise=True)
+    online_train_collector = Of4OnCollector(
+        online_policy, offline_policy, # two policies to select for collection based on a ratio
+        online_policy, # initial collecting policy
+        train_envs, buffer, exploration_noise=True)
     online_test_collector  = Collector(online_policy, test_envs, exploration_noise=True)
     offline_test_collector = Collector(offline_policy, test_envs_of, exploration_noise=True)
 
@@ -342,6 +345,15 @@ def test_of4on(args=get_args()):
     # When the online learning finishes in the phase, the offline learning starts with the current replay buffer.
     # The offline learning policy can be boostraped by the online learning policy in the current phase.:wq
     phase_epochs = [2, 2, 2] #[20, 10, 10, 10] # [2, 1, 1, 1], [3,3] for testing
+    num_phases = len(phase_epochs)
+    # the first phase only uses online policy for collection
+    ratio_step = abs(args.online_policy_collecting_ratio - args.online_policy_collecting_ratio_final) / (num_phases-1-1)
+    online_policy_collecting_ratios = [1.0]
+    if args.online_policy_collecting_ratio_final >= args.online_policy_collecting_ratio:
+        online_policy_collecting_ratios += [args.online_policy_collecting_ratio + ratio_step*i for i in range(num_phases-1)]
+    else:
+        online_policy_collecting_ratios += [args.online_policy_collecting_ratio - ratio_step*i for i in range(num_phases-1)]
+    print(f"[{datetime.datetime.now()}] Online policy collecting ratios: {online_policy_collecting_ratios}", flush=True)
 
     # pre-collect at least 50000 transitions with random action before training
     # replay_buffer_min_size = 50000
@@ -349,7 +361,6 @@ def test_of4on(args=get_args()):
     online_train_collector.collect(n_step=args.replay_buffer_min_size, random=True)
 
     phase_max_epoch = 0
-    previous_phase_best_offline_policy_path = ""
     best_offline_policies_performance = {}
     for idx, phase_epoch in enumerate(phase_epochs):
         phase_id = idx + 1 # phase id starts from 1
@@ -361,31 +372,11 @@ def test_of4on(args=get_args()):
         # the actuall number of epochs for the current phase is phase_epoch
         phase_max_epoch += phase_epoch
 
-        # bootstrapping from the previous offline learning starts from the second phase
-        if phase_id > 1:
-            if args.reset_replay_buffer_per_phase:
-                print(f"[{datetime.datetime.now()}] Reset replay buffer for the phase {phase_id}...", flush=True)
-                online_train_collector.reset_buffer()
-                # Since we are going to copy the best offline policy from the previous phase
-                # to initialize the online policy of the current phase, we here initialize the
-                # replay buffer using the online policy of the last phase such that a certain
-                # degree of exploration benefit originated from the online policy is kept and
-                # passed to the current phase. Since offline learning RL tends to be conservative
-                # and thus may lose some exploration preference of the previous online policy.
-                if args.random_exploration_before_each_phase:
-                    exploration_policy_name = "random policy"
-                else:
-                    exploration_policy_name = f"online policy of phase {phase_id-1}"
-                print(f"[{datetime.datetime.now()}] Initial exploration of phase {phase_id} using {exploration_policy_name}: collecting {args.replay_buffer_min_size} transitions...", flush=True)
-                online_train_collector.collect(n_step=args.replay_buffer_min_size, random=args.random_exploration_before_each_phase)
-
-            # a fresh new optimizer is created inside the function call.
-            online_policy = create_online_policy(previous_phase_best_offline_policy_path)
-            # When creating a new online_policy instance, the follwing relinkings are needed
-            online_train_collector.policy = online_policy
-            online_test_collector.policy = online_policy
-
-        # online training
+        # set the ratio of using online policy for experience collection
+        print(f"[{datetime.datetime.now()}] Set online policy collecting ratio: {online_policy_collecting_ratios[idx]}", flush=True)
+        online_train_collector.set_online_policy_collecting_ratio(online_policy_collecting_ratios[idx])
+    
+        # (continue) online training
         online_training_result = offpolicy_trainer(
             online_policy,
             online_train_collector,
@@ -448,8 +439,8 @@ def test_of4on(args=get_args()):
         pprint.pprint(offline_training_result)
         sys.stdout.flush()
         
-        # used by online learning in the next phase
-        previous_phase_best_offline_policy_path = os.path.join(offline_logger.writer.log_dir, "offline_policy.pth")
+        # Update the offline policy inside the online training collector for the next phase
+        online_train_collector.offline_policy = offline_policy
 
 
     with open(os.path.join(args.logdir, log_name_prefix, "best_offline_policies_performance.json"), "w") as f:
