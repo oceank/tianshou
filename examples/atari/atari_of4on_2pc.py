@@ -72,7 +72,8 @@ def get_args():
     parser.add_argument("--num-phases", type=int, default=4) # additional code supported is needed
     parser.add_argument("--online-policy-collecting-ratio", type=float, default=0.75)
     parser.add_argument("--online-policy-collecting-ratio_final", type=float, default=0.75)
-    parser.add_argument("--offline-epoch-match-consumed-online-steps", action="store_true")
+    parser.add_argument("--transfer-best-offline-policy", action="store_true")
+    parser.add_argument("--offline-epoch-setting", type=int, default = 0)
     parser.add_argument("--bootstrap-offline-with-online", action="store_true")
     
     # other training configuration
@@ -239,10 +240,14 @@ def test_of4on(args=get_args()):
             logger.load(writer)
         return logger
 
-
     experience_collection_type = f"mecS{args.online_policy_collecting_ratio}E{args.online_policy_collecting_ratio_final}"
+    experience_collection_type += "-" + "bOff" if args.transfer_best_offline_policy else "rOff"
     args.algo_name = f"cql-qrdqn-{experience_collection_type}"
-    if args.offline_epoch_match_consumed_online_steps:
+    if args.offline_epoch_setting == 1:
+        args.algo_name += "-of5gradPhase"
+    elif args.offline_epoch_setting == 2:
+        args.algo_name += "-of5gradBuffer"
+    else:
         args.algo_name += "-of5grad"
     now = datetime.datetime.now().strftime("%y%m%d-%H%M%S")
     log_name_prefix = os.path.join(args.task, args.algo_name, str(args.seed), now)
@@ -343,7 +348,7 @@ def test_of4on(args=get_args()):
     # Sarting the second phase, each online learning policy will be boostraped by the offline learning policy in the previous phase
     # When the online learning finishes in the phase, the offline learning starts with the current replay buffer.
     # The offline learning policy can be boostraped by the online learning policy in the current phase.:wq
-    phase_epochs = [2, 2, 2] #[20, 10, 10, 10] # [2, 1, 1, 1], [3,3] for testing
+    phase_epochs = [5, 5, 5] #[20, 10, 10, 10] # [2, 1, 1, 1], [3,3] for testing
     num_phases = len(phase_epochs)
     # the first phase only uses online policy for collection
     ratio_step = abs(args.online_policy_collecting_ratio - args.online_policy_collecting_ratio_final) / (num_phases-1-1)
@@ -413,8 +418,10 @@ def test_of4on(args=get_args()):
         offline_policy = create_offline_policy(current_best_online_policy_path)
         offline_test_collector.policy = offline_policy
 
-        if args.offline_epoch_match_consumed_online_steps:
+        if args.offline_epoch_setting == 1: # 5X of gradient steps of online learning in the current
             offline_epoch = int(phase_epoch * args.online_step_per_epoch * args.online_update_per_step * 5 / args.offline_update_per_epoch)
+        elif args.offline_epoch_setting == 2: # 5X of gradient steps of online learning indicating by the current buffer
+            offline_epoch = int(len(buffer) * args.online_update_per_step * 5 / args.offline_update_per_epoch)
         else:
             offline_epoch = args.offline_epoch
         print(f"[{datetime.datetime.now()}] Phase {phase_id} offline learning epochs: {offline_epoch}", flush=True)
@@ -439,7 +446,15 @@ def test_of4on(args=get_args()):
         sys.stdout.flush()
         
         # Update the offline policy inside the online training collector for the next phase
-        online_train_collector.offline_policy = offline_policy
+        # No need to sync the target network with the online network here since only the 
+        # online network is used to collect experience when using the offline policy.
+        if args.transfer_best_offline_policy:
+            phase_best_offline_policy_path = os.path.join(offline_logger.writer.log_dir, "offline_policy.pth")
+            online_train_collector.offline_policy.load_state_dict(
+                torch.load(phase_best_offline_policy_path, map_location=args.device)
+            )
+        else:
+            online_train_collector.offline_policy = offline_policy
 
 
     with open(os.path.join(args.logdir, log_name_prefix, "best_offline_policies_performance.json"), "w") as f:

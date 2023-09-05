@@ -72,8 +72,9 @@ def get_args():
     parser.add_argument("--num-phases", type=int, default=4) # additional code supported is needed
     parser.add_argument("--reset-replay-buffer-per-phase", action="store_true")
     parser.add_argument("--random-exploration-before-each-phase", action="store_true") # for phases with a id > 1
-    parser.add_argument("--offline-epoch-match-consumed-online-steps", action="store_true")
+    parser.add_argument("--offline-epoch-setting", type=int, default=0)
     parser.add_argument("--bootstrap-offline-with-online", action="store_true")
+    parser.add_argument("--transfer-best-offline-policy", action="store_true")
     
     # other training configuration
     parser.add_argument("--early-stop", type=bool, default=False)
@@ -239,6 +240,7 @@ def test_of4on(args=get_args()):
     # bt1: offline learing bootstrap online learing
     # bt2: offline and online learnings bootstrap each other
     bootstrap_type = "bt1" if not args.bootstrap_offline_with_online else "bt2"
+    bootstrap_type = "-" + "bOff" if args.transfer_best_offline_policy else "rOff"
     args.algo_name = f"cql-qrdqn-{bootstrap_type}"
     if args.offline_epoch_match_consumed_online_steps:
         args.algo_name += "-of5grad"
@@ -341,7 +343,7 @@ def test_of4on(args=get_args()):
     # Sarting the second phase, each online learning policy will be boostraped by the offline learning policy in the previous phase
     # When the online learning finishes in the phase, the offline learning starts with the current replay buffer.
     # The offline learning policy can be boostraped by the online learning policy in the current phase.:wq
-    phase_epochs = [2, 2, 2] #[20, 10, 10, 10] # [2, 1, 1, 1], [3,3] for testing
+    phase_epochs = [5, 5, 5] #[20, 10, 10, 10] # [2, 1, 1, 1], [3,3] for testing
 
     # pre-collect at least 50000 transitions with random action before training
     # replay_buffer_min_size = 50000
@@ -380,7 +382,15 @@ def test_of4on(args=get_args()):
                 online_train_collector.collect(n_step=args.replay_buffer_min_size, random=args.random_exploration_before_each_phase)
 
             # a fresh new optimizer is created inside the function call.
-            online_policy = create_online_policy(previous_phase_best_offline_policy_path)
+            if args.transfer_best_offline_policy:
+                online_policy = create_online_policy(previous_phase_best_offline_policy_path)
+            else:
+                # bootstrap online policy with offline policy learned in the previous phase
+                online_policy.load_state_dict(offline_policy.state_dict())
+                online_policy.sync_weight()
+                online_policy.optim = torch.optim.Adam(
+                    online_policy.model.parameters(), lr=args.online_lr, eps=0.01/32)
+
             # When creating a new online_policy instance, the follwing relinkings are needed
             online_train_collector.policy = online_policy
             online_test_collector.policy = online_policy
