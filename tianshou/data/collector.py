@@ -699,6 +699,13 @@ class Of4OnCollector(Collector):
         self.online_policy_collecting_ratio = ratio
 
     def set_collecting_policy(self):
+        # If the ratio is 1.0, then we always use the online policy
+        # Avoiding calling numpy.random.random() here will keep the state
+        # the numpy generator matches that in the baseline
+        if self.online_policy_collecting_ratio == 1.0:
+            self.policy = self.online_policy
+            return
+
         prob = np.random.random()
         if prob <= self.online_policy_collecting_ratio:
             self.policy = self.online_policy
