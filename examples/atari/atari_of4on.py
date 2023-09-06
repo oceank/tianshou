@@ -236,13 +236,17 @@ def test_of4on(args=get_args()):
         else:  # wandb
             logger.load(writer)
         return logger
-
+    
     # bt1: offline learing bootstrap online learing
     # bt2: offline and online learnings bootstrap each other
     bootstrap_type = "bt1" if not args.bootstrap_offline_with_online else "bt2"
     bootstrap_type = "-" + "bOff" if args.transfer_best_offline_policy else "rOff"
     args.algo_name = f"cql-qrdqn-{bootstrap_type}"
-    if args.offline_epoch_match_consumed_online_steps:
+    if args.offline_epoch_setting == 1:
+        args.algo_name += "-of5gradPhase"
+    elif args.offline_epoch_setting == 2:
+        args.algo_name += "-of5gradBuffer"
+    else:
         args.algo_name += "-of5grad"
     now = datetime.datetime.now().strftime("%y%m%d-%H%M%S")
     log_name_prefix = os.path.join(args.task, args.algo_name, str(args.seed), now)
@@ -343,7 +347,7 @@ def test_of4on(args=get_args()):
     # Sarting the second phase, each online learning policy will be boostraped by the offline learning policy in the previous phase
     # When the online learning finishes in the phase, the offline learning starts with the current replay buffer.
     # The offline learning policy can be boostraped by the online learning policy in the current phase.:wq
-    phase_epochs = [5, 5, 5] #[20, 10, 10, 10] # [2, 1, 1, 1], [3,3] for testing
+    phase_epochs = [20, 10, 10, 10] # [2, 1, 1, 1], [3,3], [5, 5, 5, 5]  for testing
 
     # pre-collect at least 50000 transitions with random action before training
     # replay_buffer_min_size = 50000
@@ -433,8 +437,10 @@ def test_of4on(args=get_args()):
         offline_policy = create_offline_policy(current_best_online_policy_path)
         offline_test_collector.policy = offline_policy
 
-        if args.offline_epoch_match_consumed_online_steps:
+        if args.offline_epoch_setting == 1: # 5X of gradient steps of online learning in the current
             offline_epoch = int(phase_epoch * args.online_step_per_epoch * args.online_update_per_step * 5 / args.offline_update_per_epoch)
+        elif args.offline_epoch_setting == 2: # 5X of gradient steps of online learning indicating by the current buffer
+            offline_epoch = int(len(buffer) * args.online_update_per_step * 5 / args.offline_update_per_epoch)
         else:
             offline_epoch = args.offline_epoch
         print(f"[{datetime.datetime.now()}] Phase {phase_id} offline learning epochs: {offline_epoch}", flush=True)
