@@ -348,7 +348,7 @@ def test_of4on(args=get_args()):
     # Sarting the second phase, each online learning policy will be boostraped by the offline learning policy in the previous phase
     # When the online learning finishes in the phase, the offline learning starts with the current replay buffer.
     # The offline learning policy can be boostraped by the online learning policy in the current phase.:wq
-    phase_epochs = [20, 10, 10, 10] # [2, 1, 1, 1], [3,3], [5, 5, 5, 5]  for testing
+    phase_epochs = [5, 5, 5] #[20, 10, 10, 10] # [2, 1, 1, 1], [3,3], [5, 5, 5, 5]  for testing
     num_phases = len(phase_epochs)
     # the first phase only uses online policy for collection
     ratio_step = abs(args.online_policy_collecting_ratio - args.online_policy_collecting_ratio_final) / (num_phases-1-1)
