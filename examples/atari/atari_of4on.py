@@ -240,7 +240,7 @@ def test_of4on(args=get_args()):
     # bt1: offline learing bootstrap online learing
     # bt2: offline and online learnings bootstrap each other
     bootstrap_type = "bt1" if not args.bootstrap_offline_with_online else "bt2"
-    bootstrap_type = "-" + "bOff" if args.transfer_best_offline_policy else "rOff"
+    bootstrap_type += "-" + "bOff" if args.transfer_best_offline_policy else "rOff"
     args.algo_name = f"cql-qrdqn-{bootstrap_type}"
     if args.offline_epoch_setting == 1:
         args.algo_name += "-of5gradPhase"
