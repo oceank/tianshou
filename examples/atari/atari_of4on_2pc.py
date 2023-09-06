@@ -241,7 +241,7 @@ def test_of4on(args=get_args()):
         return logger
 
     experience_collection_type = f"mecS{args.online_policy_collecting_ratio}E{args.online_policy_collecting_ratio_final}"
-    experience_collection_type += "-" + "bOff" if args.transfer_best_offline_policy else "rOff"
+    experience_collection_type += "-bOff" if args.transfer_best_offline_policy else "-rOff"
     args.algo_name = f"cql-qrdqn-{experience_collection_type}"
     if args.offline_epoch_setting == 1:
         args.algo_name += "-of5gradPhase"
