@@ -156,6 +156,7 @@ class BaseTrainer(ABC):
         show_progress: bool = True,
         test_in_train: bool = True,
         save_fn: Optional[Callable[[BasePolicy], None]] = None,
+        test_performance_of_initial_policy_from_log: Optional[dict] = None,
     ):
         if save_fn:
             deprecation(
@@ -176,6 +177,10 @@ class BaseTrainer(ABC):
         self.stat: DefaultDict[str, MovAvg] = defaultdict(MovAvg)
         self.best_reward = 0.0
         self.best_reward_std = 0.0
+        self.recent_reward = 0.0
+        self.recent_reward_std = 0.0
+
+
         self.start_epoch = 0
         self.gradient_step = 0
         self.env_step = 0
@@ -204,6 +209,7 @@ class BaseTrainer(ABC):
         self.show_progress = show_progress
         self.test_in_train = test_in_train
         self.resume_from_log = resume_from_log
+        self.test_performance_of_initial_policy_from_log = test_performance_of_initial_policy_from_log
 
         self.is_run = False
         self.last_rew, self.last_len = 0.0, 0
@@ -236,18 +242,20 @@ class BaseTrainer(ABC):
             assert not isinstance(self.test_collector, AsyncCollector)  # Issue 700
             self.test_collector.reset_stat()
             self.best_epoch = self.start_epoch
-            # Log test result before training if the training starts from scratch
-            # Otherwise, do not log the initial test result
-            if self.start_epoch == 0:
-                init_test_logger = self.logger
+            # Initialize the best reward and best reward std from the logged performance of the resumed policy (start epoch is not 0)
+            # Otherwise, evaluate and log the randomly initialized policy (start epoch is 0)
+            if self.start_epoch != 0:
+                test_result = self.test_performance_of_initial_policy_from_log
             else:
-                init_test_logger = None
-            test_result = test_episode(
-                self.policy, self.test_collector, self.test_fn, self.start_epoch,
-                self.episode_per_test, init_test_logger, self.env_step, self.reward_metric
-            )
+                test_result = test_episode(
+                    self.policy, self.test_collector, self.test_fn, self.start_epoch,
+                    self.episode_per_test, self.logger, self.env_step, self.reward_metric
+                )
             self.best_reward, self.best_reward_std = \
                 test_result["rew"], test_result["rew_std"]
+            self.recent_reward, self.recent_reward_std = \
+                test_result["rew"], test_result["rew_std"]
+
         if self.save_best_fn:
             self.save_best_fn(self.policy)
 
@@ -337,7 +345,7 @@ class BaseTrainer(ABC):
             )
             info = gather_info(
                 self.start_time, self.train_collector, self.test_collector,
-                self.best_reward, self.best_reward_std
+                self.best_reward, self.best_reward_std, self.recent_reward, self.recent_reward_std
             )
             return self.epoch, epoch_stat, info
         else:
@@ -352,6 +360,8 @@ class BaseTrainer(ABC):
             self.policy, self.test_collector, self.test_fn, self.epoch,
             self.episode_per_test, self.logger, self.env_step, self.reward_metric
         )
+        self.recent_reward, self.recent_reward_std = \
+                float(test_result["rew"]), test_result["rew_std"]
         rew, rew_std = test_result["rew"], test_result["rew_std"]
         if self.best_epoch < 0 or self.best_reward < rew:
             self.best_epoch = self.epoch
@@ -413,6 +423,8 @@ class BaseTrainer(ABC):
                     self.policy, self.test_collector, self.test_fn, self.epoch,
                     self.episode_per_test, self.logger, self.env_step
                 )
+                self.recent_reward, self.recent_reward_std = \
+                        float(test_result["rew"]), test_result["rew_std"]
                 if self.stop_fn(test_result["rew"]):
                     stop_fn_flag = True
                     self.best_reward = test_result["rew"]
@@ -449,7 +461,7 @@ class BaseTrainer(ABC):
             deque(self, maxlen=0)  # feed the entire iterator into a zero-length deque
             info = gather_info(
                 self.start_time, self.train_collector, self.test_collector,
-                self.best_reward, self.best_reward_std
+                self.best_reward, self.best_reward_std, self.recent_reward, self.recent_reward_std
             )
         finally:
             self.is_run = False

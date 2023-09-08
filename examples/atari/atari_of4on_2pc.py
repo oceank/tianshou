@@ -366,6 +366,8 @@ def test_of4on(args=get_args()):
 
     phase_max_epoch = 0
     best_offline_policies_performance = {}
+    resume_from_log = False
+    test_performance_of_online_policy_to_transfer = None
     for idx, phase_epoch in enumerate(phase_epochs):
         phase_id = idx + 1 # phase id starts from 1
 
@@ -375,6 +377,9 @@ def test_of4on(args=get_args()):
         # update the maximum number of epochs that the current phase is expected to reach
         # the actuall number of epochs for the current phase is phase_epoch
         phase_max_epoch += phase_epoch
+
+        if phase_id > 1:
+            resume_from_log = True
 
         # set the ratio of using online policy for experience collection
         print(f"[{datetime.datetime.now()}] Set online policy collecting ratio: {online_policy_collecting_ratios[idx]}", flush=True)
@@ -400,7 +405,11 @@ def test_of4on(args=get_args()):
             update_per_step=args.online_update_per_step,
             test_in_train=False,
             show_progress=args.show_progress,
+            test_performance_of_initial_policy_from_log = test_performance_of_online_policy_to_transfer
         )
+        # save and use it in the continual online training in the next phase
+        test_performance_of_online_policy_to_transfer["rew"] = online_train_result["recent_reward"]
+        test_performance_of_online_policy_to_transfer["rew_std"] = online_train_result["recent_reward_std"]
 
         print(f"[{datetime.datetime.now()}] Finish phase {phase_id} online training ...", flush=True)
         pprint.pprint(online_training_result)

@@ -357,6 +357,8 @@ def test_of4on(args=get_args()):
     phase_max_epoch = 0
     previous_phase_best_offline_policy_path = ""
     best_offline_policies_performance = {}
+    resume_from_log = False # Set it to True starting from the 2nd phase since there is available offline policy will be used to initialize the online policy in the current phase
+    test_performance_of_offline_policy_to_transfer = None
     for idx, phase_epoch in enumerate(phase_epochs):
         phase_id = idx + 1 # phase id starts from 1
 
@@ -369,6 +371,7 @@ def test_of4on(args=get_args()):
 
         # bootstrapping from the previous offline learning starts from the second phase
         if phase_id > 1:
+            resume_from_log = True
             if args.reset_replay_buffer_per_phase:
                 print(f"[{datetime.datetime.now()}] Reset replay buffer for the phase {phase_id}...", flush=True)
                 online_train_collector.reset_buffer()
@@ -414,11 +417,12 @@ def test_of4on(args=get_args()):
             stop_fn=stop_online_fn,
             save_best_fn=save_best_online_fn,
             save_checkpoint_fn=save_checkpoint_fn,
-            resume_from_log = True, # True for continuing the training from the previous phase
+            resume_from_log = resume_from_log, # True for continuing the training from the previous phase
             logger=online_logger,
             update_per_step=args.online_update_per_step,
             test_in_train=False,
             show_progress=args.show_progress,
+            test_performance_of_initial_policy_from_log = test_performance_of_offline_policy_to_transfer
         )
 
         print(f"[{datetime.datetime.now()}] Finish phase {phase_id} online training ...", flush=True)
@@ -458,6 +462,13 @@ def test_of4on(args=get_args()):
         )
 
         # offline_training_result["best_result"]: 'best_reward ± best_reward_std'
+        if args.args.transfer_best_offline_policy:
+            test_performance_of_offline_policy_to_transfer["rew"] = offline_train_result["best_reward"]
+            test_performance_of_offline_policy_to_transfer["rew_std"] = offline_train_result["best_reward_std"]
+        else:
+            test_performance_of_offline_policy_to_transfer["rew"] = offline_train_result["recent_reward"]
+            test_performance_of_offline_policy_to_transfer["rew_std"] = offline_train_result["recent_reward_std"]
+
         best_offline_policies_performance[phase_max_epoch*args.online_step_per_epoch] = \
             float(offline_training_result["best_reward"])
         print(f"[{datetime.datetime.now()}] Finish phase {phase_id} offline training ...", flush=True)
