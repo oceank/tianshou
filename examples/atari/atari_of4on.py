@@ -356,7 +356,7 @@ def test_of4on(args=get_args()):
 
     phase_max_epoch = 0
     previous_phase_best_offline_policy_path = ""
-    best_offline_policies_performance = {}
+    performance_of_transferred_offline_policies = {}
     resume_from_log = False # Set it to True starting from the 2nd phase since there is available offline policy will be used to initialize the online policy in the current phase
     test_performance_of_offline_policy_to_transfer = None
     for idx, phase_epoch in enumerate(phase_epochs):
@@ -462,6 +462,7 @@ def test_of4on(args=get_args()):
         )
 
         # offline_training_result["best_result"]: 'best_reward ± best_reward_std'
+        test_performance_of_offline_policy_to_transfer = {}
         if args.args.transfer_best_offline_policy:
             test_performance_of_offline_policy_to_transfer["rew"] = offline_train_result["best_reward"]
             test_performance_of_offline_policy_to_transfer["rew_std"] = offline_train_result["best_reward_std"]
@@ -469,8 +470,8 @@ def test_of4on(args=get_args()):
             test_performance_of_offline_policy_to_transfer["rew"] = offline_train_result["recent_reward"]
             test_performance_of_offline_policy_to_transfer["rew_std"] = offline_train_result["recent_reward_std"]
 
-        best_offline_policies_performance[phase_max_epoch*args.online_step_per_epoch] = \
-            float(offline_training_result["best_reward"])
+        performance_of_transferred_offline_policies[phase_max_epoch*args.online_step_per_epoch] = \
+            test_performance_of_offline_policy_to_transfer["rew"]
         print(f"[{datetime.datetime.now()}] Finish phase {phase_id} offline training ...", flush=True)
         pprint.pprint(offline_training_result)
         sys.stdout.flush()
@@ -479,8 +480,8 @@ def test_of4on(args=get_args()):
         previous_phase_best_offline_policy_path = os.path.join(offline_logger.writer.log_dir, "offline_policy.pth")
 
 
-    with open(os.path.join(args.logdir, log_name_prefix, "best_offline_policies_performance.json"), "w") as f:
-        json.dump(best_offline_policies_performance, f, indent=4)
+    with open(os.path.join(args.logdir, log_name_prefix, "performance_of_transferred_offline_policies.json"), "w") as f:
+        json.dump(performance_of_transferred_offline_policies, f, indent=4)
 
     online_policy_test_rewards = online_logger.retrieve_info_from_log("test/reward")
     with open(os.path.join(args.logdir, log_name_prefix, "online_policy_test_rewards.json"), "w") as f:
