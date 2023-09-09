@@ -1,7 +1,7 @@
 """Trainer package."""
 
 from tianshou.trainer.base import BaseTrainer
-from tian.trainer.offpolicy_of4on_dpc import (
+from tianshou.trainer.offpolicy_of4on_dpc import (
     OnlinePolicyExperienceCollectionSetting,
     OffpolicyDualpolicyCollectionTrainer,
     offpolicy_dualpolicycollection_trainer,

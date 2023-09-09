@@ -29,7 +29,7 @@ def get_args():
     parser = argparse.ArgumentParser()
     parser.add_argument("--torch-num-threads", type=int, default=2)
     parser.add_argument("--train-env-num-threads", type=int, default=4)
-    parser.add_argument("--test-env-num-threads", type=int, default=10)
+    parser.add_argument("--test-env-num-threads", type=int, default=5)
     parser.add_argument("--task", type=str, default="PongNoFrameskip-v4")
     parser.add_argument("--seed", type=int, default=0)
     parser.add_argument(
@@ -69,15 +69,17 @@ def get_args():
     parser.add_argument("--offline-batch-size", type=int, default=32)
     parser.add_argument("--min-q-weight", type=float, default=4.0)
     # offline for online
-    parser.add_argument("--num-phases", type=int, default=4) # additional code supported is needed
+    parser.add_argument("--num-phases", type=int, default=5) # by default, one phase has 10 online epochs
+    parser.add_argument("--of4on-type", type=str, default="DirectCopy") # DirectCopy, DualCollection, PEX(ToDo)
     parser.add_argument("--online-policy_collecting_setting_type", type=str, default="Fixed") # Fixed, Scheduling, Adaptive
-    parser.add_argument("--online-polciy-collecting-ratio", type=float, default=1.0)) # 1.0, 0.75, 0.5, 0.25
+    parser.add_argument("--online-policy-collecting-ratio", type=float, default=1.0) # 1.0, 0.75, 0.5, 0.25
     parser.add_argument("--online-policy-collecting-ratio_start", type=float, default=0.0) # 0.0 , 0.25
     parser.add_argument("--online-policy-collecting-ratio_final", type=float, default=1.0) # 1.0,  0.75
     parser.add_argument("--transfer-best-offline-policy", action="store_true")
+    ## 0: args.offline_epoch, 1/2: 5X of gradients of online policy in the current phase/inferred by the current buffer
     parser.add_argument("--offline-epoch-setting", type=int, default = 0)
-    parser.add_argument("--bootstrap-offline-with-online", action="store_true")
-   # other training configuration
+    parser.add_argument("--bootstrap-offline-with-online", action="store_true") # copy the best online policy to initialize offline policy
+    # other training configuration
     parser.add_argument("--early-stop", type=bool, default=False)
     parser.add_argument("--resume-path", type=str, default=None)
     parser.add_argument("--resume-id", type=str, default=None)
@@ -241,15 +243,46 @@ def test_of4on(args=get_args()):
             logger.load(writer)
         return logger
 
-    experience_collection_type = f"mecS{args.online_policy_collecting_ratio}E{args.online_policy_collecting_ratio_final}"
-    experience_collection_type += "-bOff" if args.transfer_best_offline_policy else "-rOff"
-    args.algo_name = f"cql-qrdqn-{experience_collection_type}"
-    if args.offline_epoch_setting == 1:
-        args.algo_name += "-of5gradPhase"
-    elif args.offline_epoch_setting == 2:
-        args.algo_name += "-of5gradBuffer"
+    # The name format (without the seed and the experiment starting time) of log folder for each experiment of the same game:
+    # cql-qrdqn-<of4on type>-<of4on type setting>-<'bf' or 'rf'>-ofe-<'phase5grad', 'buffer5grad', 'userdefined'>
+    #   <of4on type>: 'dic' (DirectCopy) | 'duc' (DualCollect)
+    #   <of4on type setting>: 'f2o' (OfflineToOnline) | ('f'<decimal> (Fixed), 'sb'<ratio start>'e'<ratio end> (Scheduling), 'adp' (Adaptive))
+    #   <'bf' or 'rf'>: 'bf' (Transfer BestOfflinePolicy), 'rf' (Transfer RecentOfflinePolicy)
+    #   ofe: offline epoch
+    #   <'phase5grad', 'buffer5grad', 'userdefined'>: 5X of OnlinePolicyGradientSteps of Current Phase or associated with Curreht Buffer, or a user-defined number
+    ## offline and online algorithms' name
+    args.algo_name = "cql-qrdqn"
+    ## of4on type and type setting
+    if args.of4on_type == "DirectCopy":
+        args.algo_name += "-dic-f2o"
+    elif args.of4on_type == "DualCollect":
+        args.algo_name += "-duc"
+        if args.online_policy_collecting_setting_type == "Fixed":
+            args.algo_name += f"-f{int(100*args.online_policy_collecting_ratio)}"
+        elif args.online_policy_collecting_setting_type == "Scheduling":
+            args.algo_name += f"-sb{int(100*args.online_policy_collecting_ratio_start)}e{int(100*args.online_policy_collecting_ratio_final)}"
+        elif args.online_policy_collecting_setting_type == "Adaptive":
+            args.algo_name += "-adp"
+        else:
+            raise f"Unsupported online policy collecting setting of the DualCollect of4on type: {args.online_policy_collecting_setting_type}"
     else:
-        args.algo_name += "-of5grad"
+        raise f"Unsupported of4on type: {args.of4on_type}"
+    ## transfer the best or the recent offline policy to the next phase
+    if args.transfer_best_offline_policy:
+        args.algo_name += "-bf"
+    else:
+        args.algo_name += "-rf"
+    ## offline epoch setting
+    args.algo_name += "-ofe"
+    if args.offline_epoch_setting == 1:
+        args.algo_name += "-phase5grad"
+    elif args.offline_epoch_setting == 2:
+        args.algo_name += "-buffer5grad"
+    elif args.offline_epoch_setting == 0:
+        args.algo_name += "-userdefined"
+    else:
+        raise f"Unsupported offline epoch setting, {args.offline_epoch_setting}"
+
     now = datetime.datetime.now().strftime("%y%m%d-%H%M%S")
     log_name_prefix = os.path.join(args.task, args.algo_name, str(args.seed), now)
     online_log_name = os.path.join(log_name_prefix, "online")
@@ -342,21 +375,25 @@ def test_of4on(args=get_args()):
         exit(0)
 
   
-    # FIXME:    currently manually set the number of epochs for each phase
+    # phase_epoch:
     #           index: phase number-1, value: number of online-learning epochs for the phase
     #           [20, 10, 10, 10]: 4 phases, 20 epochs for the first phase, 10 epochs for the rest
-    # Each phase starts with online learning, ends with offline learning
-    # Sarting the second phase, each online learning policy will be boostraped by the offline learning policy in the previous phase
-    # When the online learning finishes in the phase, the offline learning starts with the current replay buffer.
-    # The offline learning policy can be boostraped by the online learning policy in the current phase.
-    phase_epochs = [5, 5, 5] #[20, 10, 10, 10] # [2, 1, 1, 1], [3,3], [5, 5, 5, 5]  for testing
-    num_phases = len(phase_epochs)
+    #   Each phase starts with online learning, ends with offline learning
+    #   Sarting the second phase, each online learning policy will be boostraped by the offline learning policy in the previous phase
+    #   When the online learning finishes in the phase, the offline learning starts with the current replay buffer.
+    #   The offline learning policy can be boostraped by the online learning policy in the current phase.
+    #   Previous values of phase_epochs in manually setting: [5, 5, 5], [20, 10, 10, 10], [2, 1, 1, 1], [3,3], [5, 5, 5, 5]
+    epoch_per_phase = args.online_epoch // args.num_phases
+    phase_epochs = [epoch_per_phase] * args.num_phases
+    # if online_epoch is divisible by num_phases, add the residual to the first phase
+    if args.online_epoch%args.num_phases != 0:
+        phase_epochs[0] = phase_epochs[0] + (args.online_epoch%args.num_phases)
 
     '''
     # Schedule online-policy collecting ratio using phase as the step (except phase 1)
-    ratio_step = abs(args.online_policy_collecting_ratio_start - args.online_policy_collecting_ratio_final) / (num_phases-1-1)
+    ratio_step = abs(args.online_policy_collecting_ratio_start - args.online_policy_collecting_ratio_final) / (args.num_phases-1-1)
     online_policy_collecting_ratios = [1.0] # the first phase only uses online policy for collection
-    online_policy_collecting_ratios += [args.online_policy_collecting_ratio + ratio_step*i for i in range(num_phases-1)]
+    online_policy_collecting_ratios += [args.online_policy_collecting_ratio + ratio_step*i for i in range(args.num_phases-1)]
     print(f"[{datetime.datetime.now()}] Online policy collecting ratios: {online_policy_collecting_ratios}", flush=True)
     '''
     # Initialize the experience collection setting of online policy
@@ -369,9 +406,9 @@ def test_of4on(args=get_args()):
         online_policy_collecting_setting_value = args.online_policy_collecting_ratio
     else:
         assert False, f"Unexpected raito type of experience collection by online policy"
-    onine_policy_experience_collection_setting = OnlinePolicyExperienceCollectionSetting(
+    online_policy_experience_collection_setting = OnlinePolicyExperienceCollectionSetting(
             args.online_policy_collecting_setting_type, online_policy_collecting_setting_value)
-    print(f"[{datetime.datetime.now()}] Initialized experience-collection setting of online policy: {onine_policy_experience_collection_setting}", flush=True)
+    print(f"[{datetime.datetime.now()}] Initialized experience-collection setting of online policy: {online_policy_experience_collection_setting}", flush=True)
 
     # pre-collect at least 50000 transitions with random action before training
     # replay_buffer_min_size = 50000
@@ -392,17 +429,17 @@ def test_of4on(args=get_args()):
         # the actuall number of epochs for the current phase is phase_epoch
         phase_max_epoch += phase_epoch
 
-        # set the ratio of using online policy for experience collection
-        print(f"[{datetime.datetime.now()}] Set online policy collecting ratio: {online_policy_collecting_ratios[idx]}", flush=True)
+        # set the ratio of using online policy for experience collection phase by phase
+        # print(f"[{datetime.datetime.now()}] Set online policy collecting ratio: {online_policy_collecting_ratios[idx]}", flush=True)
 
         if phase_id == 1:
             # only use the online policy for experience collection in the first phase since the offline policy is not available
             online_train_collector.set_online_policy_collecting_ratio(1.0)
         else: # phase_id > 1
             resume_from_log = True
-            if onine_policy_experience_collection_setting.setting_type == "Adaptive":
-                onine_policy_experience_collection_setting.setting_value = offline_policy_performance
-                print(f"[{datetime.datetime.now()}] Updated experience-collection setting of online policy: {onine_policy_experience_collection_setting}", flush=True)
+            if online_policy_experience_collection_setting.setting_type == "Adaptive":
+                online_policy_experience_collection_setting.setting_value = offline_policy_performance
+                print(f"[{datetime.datetime.now()}] Updated experience-collection setting of online policy: {online_policy_experience_collection_setting}", flush=True)
 
 
         # (continue) online training
@@ -420,7 +457,7 @@ def test_of4on(args=get_args()):
             stop_fn=stop_online_fn,
             save_best_fn=save_best_online_fn,
             save_checkpoint_fn=save_checkpoint_fn,
-            resume_from_log = True, # True for continuing the training from the previous phase
+            resume_from_log = resume_from_log, # True for continuing the training from the previous phase
             logger=online_logger,
             update_per_step=args.online_update_per_step,
             test_in_train=False,
@@ -430,8 +467,9 @@ def test_of4on(args=get_args()):
         )
 
         # save and use it in the continual online training in the next phase
-        test_performance_of_online_policy_to_resume["rew"] = online_train_result["recent_reward"]
-        test_performance_of_online_policy_to_resume["rew_std"] = online_train_result["recent_reward_std"]
+        test_performance_of_online_policy_to_resume = {}
+        test_performance_of_online_policy_to_resume["rew"] = online_training_result["recent_reward"]
+        test_performance_of_online_policy_to_resume["rew_std"] = online_training_result["recent_reward_std"]
 
         print(f"[{datetime.datetime.now()}] Finish phase {phase_id} online training ...", flush=True)
         pprint.pprint(online_training_result)

@@ -1,14 +1,16 @@
-from typing import Any, Callable, Dict, Optional, Union, List
+from typing import Any, Callable, Dict, Optional, Union, List, Tuple
 
 import numpy as np
 
 from tianshou.data import Collector, Of4OnCollector
 from tianshou.policy import BasePolicy
-from tianshou.trainer.base import BaseTrainer, OffpolicyTrainer
+from tianshou.trainer.base import BaseTrainer
 from tianshou.utils import BaseLogger, LazyLogger
+from tianshou.trainer.offpolicy import OffpolicyTrainer
+
 
 class OnlinePolicyExperienceCollectionSetting:
-    def __init__(self, setting_type: str = "Fixed", setting_value: Union[float, List]) = 1.0):
+    def __init__(self, setting_type: str = "Fixed", setting_value: Union[float, List] = 1.0):
         self.setting_type = setting_type
         self.setting_value = setting_value
 
@@ -40,6 +42,8 @@ class OnlinePolicyExperienceCollectionSetting:
         else:
             assert False, f"Fail to calculate the ratio of experience collection by the online policy due to the Unexpected setting type, {self.setting_type}"
 
+    def __str__(self):
+        return f"setting_type ({self.setting_type}), setting_value ({self.setting_value})"
 
 class OffpolicyDualpolicyCollectionTrainer(OffpolicyTrainer):
     """Create an iterator wrapper for off-policy training procedure.
@@ -120,33 +124,32 @@ class OffpolicyDualpolicyCollectionTrainer(OffpolicyTrainer):
         verbose: bool = True,
         show_progress: bool = True,
         test_in_train: bool = True,
-        online_policy_experience_collection_setting: OnlinePolicyExperienceCollectionSetting("Fixed", 1.0),
+        online_policy_experience_collection_setting: OnlinePolicyExperienceCollectionSetting = OnlinePolicyExperienceCollectionSetting("Fixed", 1.0),
         **kwargs: Any,
     ):
         self.online_policy_experience_collection_setting = online_policy_experience_collection_setting
 
         super().__init__(
-            learning_type="offpolicy",
-            policy=policy,
-            train_collector=train_collector,
-            test_collector=test_collector,
-            max_epoch=max_epoch,
-            step_per_epoch=step_per_epoch,
-            step_per_collect=step_per_collect,
-            episode_per_test=episode_per_test,
-            batch_size=batch_size,
-            update_per_step=update_per_step,
-            train_fn=train_fn,
-            test_fn=test_fn,
-            stop_fn=stop_fn,
-            save_best_fn=save_best_fn,
-            save_checkpoint_fn=save_checkpoint_fn,
-            resume_from_log=resume_from_log,
-            reward_metric=reward_metric,
-            logger=logger,
-            verbose=verbose,
-            show_progress=show_progress,
-            test_in_train=test_in_train,
+            policy,
+            train_collector,
+            test_collector,
+            max_epoch,
+            step_per_epoch,
+            step_per_collect,
+            episode_per_test,
+            batch_size,
+            update_per_step = update_per_step,
+            train_fn = train_fn,
+            test_fn = test_fn,
+            stop_fn = stop_fn,
+            save_best_fn = save_best_fn,
+            save_checkpoint_fn = save_checkpoint_fn,
+            resume_from_log = resume_from_log,
+            reward_metric = reward_metric,
+            logger = logger,
+            verbose = verbose,
+            show_progress = show_progress,
+            test_in_train = test_in_train,
             **kwargs,
         )
 
