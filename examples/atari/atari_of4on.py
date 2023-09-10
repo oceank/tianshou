@@ -572,6 +572,7 @@ def test_of4on(args=get_args()):
             stop_fn=stop_offline_fn,
             save_best_fn=save_best_offline_fn,
             logger=offline_logger,
+            show_progress=args.show_progress,
         )
 
         # Update the offline policy inside the online training collector for the next phase
