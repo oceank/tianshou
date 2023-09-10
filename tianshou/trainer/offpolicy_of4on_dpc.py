@@ -38,9 +38,15 @@ class OnlinePolicyExperienceCollectionSetting:
         elif self.setting_type == "Scheduling":
             return self.setting_value[0] + training_progress_in_percent*(self.setting_value[1]-self.setting_value[0])
         elif self.setting_type == "Adaptive":
-            return online_policy_test_performance/(online_policy_test_performance+self.setting_value)
+            performances = np.array([online_policy_test_performance, self.setting_value])
+            probs = self.softmax(performances - np.max(performances))
+            return probs[0]
         else:
             assert False, f"Fail to calculate the ratio of experience collection by the online policy due to the Unexpected setting type, {self.setting_type}"
+
+    def softmax(self, x):
+        f = np.exp(x - np.max(x)) # shift the highest value
+        return f / f.sum(axis=0)
 
     def __str__(self):
         return f"setting_type ({self.setting_type}), setting_value ({self.setting_value})"
@@ -165,10 +171,13 @@ class OffpolicyDualpolicyCollectionTrainer(OffpolicyTrainer):
     def __next__(self) -> Union[None, Tuple[int, Dict[str, Any], Dict[str, Any]]]:
         # set the ratio of experience collection by online policy (i.e., the data member, policy)
         assert self.train_collector is not None
+
         ratio = self.online_policy_experience_collection_setting.cal_online_policy_experience_collection_ratio(
                 float((1+self.iter_num)/self.num_epochs_to_run), # training progresess in percentage
                 self.recent_reward, # the test performance of the recent online policy
         )
+        if self.online_policy_experience_collection_setting.setting_type == "Adaptive":
+            print(f"[Online Policy Experience Collection Ratioi - Adaptive] online policy's performance ({self.recent_reward}), offline policy's performnace ({self.online_policy_experience_collection_setting.setting_value}) => ratio ({ratio})")
         self.train_collector.set_online_policy_collecting_ratio(ratio)
 
         return super().__next__() 
