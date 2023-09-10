@@ -39,13 +39,18 @@ class OnlinePolicyExperienceCollectionSetting:
             return self.setting_value[0] + training_progress_in_percent*(self.setting_value[1]-self.setting_value[0])
         elif self.setting_type == "Adaptive":
             performances = np.array([online_policy_test_performance, self.setting_value])
-            probs = self.softmax(performances - np.max(performances))
+            # Shift and scale the performances to [0, 10)
+            performances = performances - performances.min() # shift the lowest value to 0
+            num_digits_before_decimal = int(np.log10(performances.max()))
+            temperature = np.power(10, num_digits_before_decimal)
+            performances = performances / temperature
+            probs = self.softmax(performances)
             return probs[0]
         else:
             assert False, f"Fail to calculate the ratio of experience collection by the online policy due to the Unexpected setting type, {self.setting_type}"
 
     def softmax(self, x):
-        f = np.exp(x - np.max(x)) # shift the highest value
+        f = np.exp(x)
         return f / f.sum(axis=0)
 
     def __str__(self):
