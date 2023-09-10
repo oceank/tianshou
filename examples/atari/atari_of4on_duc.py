@@ -71,10 +71,10 @@ def get_args():
     # offline for online
     parser.add_argument("--num-phases", type=int, default=5) # by default, one phase has 10 online epochs
     parser.add_argument("--of4on-type", type=str, default="DirectCopy") # DirectCopy, DualCollection, PEX(ToDo)
-    parser.add_argument("--online-policy_collecting_setting_type", type=str, default="Fixed") # Fixed, Scheduling, Adaptive
+    parser.add_argument("--online-policy-collecting-setting-type", type=str, default="Fixed") # Fixed, Scheduling, Adaptive
     parser.add_argument("--online-policy-collecting-ratio", type=float, default=1.0) # 1.0, 0.75, 0.5, 0.25
-    parser.add_argument("--online-policy-collecting-ratio_start", type=float, default=0.0) # 0.0 , 0.25
-    parser.add_argument("--online-policy-collecting-ratio_final", type=float, default=1.0) # 1.0,  0.75
+    parser.add_argument("--online-policy-collecting-ratio-start", type=float, default=0.0) # 0.0 , 0.25
+    parser.add_argument("--online-policy-collecting-ratio-final", type=float, default=1.0) # 1.0,  0.75
     parser.add_argument("--transfer-best-offline-policy", action="store_true")
     ## 0: args.offline_epoch, 1/2: 5X of gradients of online policy in the current phase/inferred by the current buffer
     parser.add_argument("--offline-epoch-setting", type=int, default = 0)

@@ -693,7 +693,7 @@ class Of4OnCollector(Collector):
         )
         self.online_policy = online_policy
         self.offline_policy = offline_policy
-        self.online_policy_collecting_ratio = 0.5
+        self.online_policy_collecting_ratio = 1.0
 
     def set_online_policy_collecting_ratio(self, ratio):
         self.online_policy_collecting_ratio = ratio
