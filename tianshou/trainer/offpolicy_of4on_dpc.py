@@ -38,6 +38,8 @@ class OnlinePolicyExperienceCollectionSetting:
         elif self.setting_type == "Scheduling":
             return self.setting_value[0] + training_progress_in_percent*(self.setting_value[1]-self.setting_value[0])
         elif self.setting_type == "Adaptive":
+            if online_policy_test_performance == self.setting_value: # avoid log10(0)
+                return 0.5
             performances = np.array([online_policy_test_performance, self.setting_value])
             # Shift and scale the performances to [0, 10)
             performances = performances - performances.min() # shift the lowest value to 0
