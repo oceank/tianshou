@@ -117,8 +117,57 @@ def test_of4on(args=get_args()):
     print(f"[{datetime.datetime.now()}] experiment configuration:", flush=True)
     pprint.pprint(vars(args), indent=4)
     sys.stdout.flush()
+
+    def add_algo_name():
+        # The name format (without the seed and the experiment starting time) of log folder for each experiment of the same game:
+        # cql-qrdqn-<of4on type>-<of4on type setting>-<'bf' or 'rf'>-ofe-<'phase5grad', 'buffer5grad', 'userdefined'>
+        #   <of4on type>: 'dic' (DirectCopy) | 'duc' (DualCollect)
+        #   <of4on type setting>: 'f2o' (OfflineToOnline) | ('f'<decimal> (Fixed), 'sb'<ratio start>'e'<ratio end> (Scheduling), 'adp' (Adaptive))
+        #   <'bf' or 'rf'>: 'bf' (Transfer BestOfflinePolicy), 'rf' (Transfer RecentOfflinePolicy)
+        #   ofe: offline epoch
+        #   <'phase5grad', 'buffer5grad', 'userdefined'>: 5X of OnlinePolicyGradientSteps of Current Phase or associated with Curreht Buffer, or a user-defined number
+        ## offline and online algorithms' name
+        args.algo_name = "cql-qrdqn"
+        ## of4on type and type setting
+        if args.of4on_type == "DirectCopy":
+            args.algo_name += "-dic-f2o"
+        elif args.of4on_type == "DualCollect":
+            args.algo_name += "-duc"
+            if args.online_policy_collecting_setting_type == "Fixed":
+                args.algo_name += f"-f{int(100*args.online_policy_collecting_ratio)}"
+            elif args.online_policy_collecting_setting_type == "Scheduling":
+                args.algo_name += f"-sb{int(100*args.online_policy_collecting_ratio_start)}e{int(100*args.online_policy_collecting_ratio_final)}"
+            elif args.online_policy_collecting_setting_type == "Adaptive":
+                args.algo_name += "-adp"
+            else:
+                raise f"Unsupported online policy collecting setting of the DualCollect of4on type: {args.online_policy_collecting_setting_type}"
+        else:
+            raise f"Unsupported of4on type: {args.of4on_type}"
+        ## transfer the best or the recent offline policy to the next phase
+        if args.transfer_best_offline_policy:
+            args.algo_name += "-bf"
+        else:
+            args.algo_name += "-rf"
+        ## offline epoch setting
+        args.algo_name += "-ofe"
+        if args.offline_epoch_setting == 1:
+            args.algo_name += "-phase5grad"
+        elif args.offline_epoch_setting == 2:
+            args.algo_name += "-buffer5grad"
+        elif args.offline_epoch_setting == 0:
+            args.algo_name += "-userdefined"
+        else:
+            raise f"Unsupported offline epoch setting, {args.offline_epoch_setting}"
+    
+    add_algo_name()
+    now = datetime.datetime.now().strftime("%y%m%d-%H%M%S")
+    log_name_prefix = os.path.join(args.task, args.algo_name, str(args.seed), now)
+    experiment_result_dir = os.path.join(args.logdir, log_name_prefix)
+    os.makedirs(experiment_result_dir, exist_ok=True)
     print(f"[{datetime.datetime.now()}] The available number of GPUs: {torch.cuda.device_count()}", flush=True)
- 
+    with open(os.path.join(experiment_result_dir, "traning_configuration.json"), "w") as f:
+        json.dump(vars(args), f, indent=4)
+
     # seed
     disable_cudnn = False
     set_determenistic_mode(args.seed, disable_cudnn)
@@ -254,48 +303,6 @@ def test_of4on(args=get_args()):
             logger.load(writer)
         return logger
 
-    # The name format (without the seed and the experiment starting time) of log folder for each experiment of the same game:
-    # cql-qrdqn-<of4on type>-<of4on type setting>-<'bf' or 'rf'>-ofe-<'phase5grad', 'buffer5grad', 'userdefined'>
-    #   <of4on type>: 'dic' (DirectCopy) | 'duc' (DualCollect)
-    #   <of4on type setting>: 'f2o' (OfflineToOnline) | ('f'<decimal> (Fixed), 'sb'<ratio start>'e'<ratio end> (Scheduling), 'adp' (Adaptive))
-    #   <'bf' or 'rf'>: 'bf' (Transfer BestOfflinePolicy), 'rf' (Transfer RecentOfflinePolicy)
-    #   ofe: offline epoch
-    #   <'phase5grad', 'buffer5grad', 'userdefined'>: 5X of OnlinePolicyGradientSteps of Current Phase or associated with Curreht Buffer, or a user-defined number
-    ## offline and online algorithms' name
-    args.algo_name = "cql-qrdqn"
-    ## of4on type and type setting
-    if args.of4on_type == "DirectCopy":
-        args.algo_name += "-dic-f2o"
-    elif args.of4on_type == "DualCollect":
-        args.algo_name += "-duc"
-        if args.online_policy_collecting_setting_type == "Fixed":
-            args.algo_name += f"-f{int(100*args.online_policy_collecting_ratio)}"
-        elif args.online_policy_collecting_setting_type == "Scheduling":
-            args.algo_name += f"-sb{int(100*args.online_policy_collecting_ratio_start)}e{int(100*args.online_policy_collecting_ratio_final)}"
-        elif args.online_policy_collecting_setting_type == "Adaptive":
-            args.algo_name += "-adp"
-        else:
-            raise f"Unsupported online policy collecting setting of the DualCollect of4on type: {args.online_policy_collecting_setting_type}"
-    else:
-        raise f"Unsupported of4on type: {args.of4on_type}"
-    ## transfer the best or the recent offline policy to the next phase
-    if args.transfer_best_offline_policy:
-        args.algo_name += "-bf"
-    else:
-        args.algo_name += "-rf"
-    ## offline epoch setting
-    args.algo_name += "-ofe"
-    if args.offline_epoch_setting == 1:
-        args.algo_name += "-phase5grad"
-    elif args.offline_epoch_setting == 2:
-        args.algo_name += "-buffer5grad"
-    elif args.offline_epoch_setting == 0:
-        args.algo_name += "-userdefined"
-    else:
-        raise f"Unsupported offline epoch setting, {args.offline_epoch_setting}"
-
-    now = datetime.datetime.now().strftime("%y%m%d-%H%M%S")
-    log_name_prefix = os.path.join(args.task, args.algo_name, str(args.seed), now)
     online_log_name = os.path.join(log_name_prefix, "online")
     # logger for online learning
     online_logger = create_logger(online_log_name, args)
@@ -601,11 +608,11 @@ def test_of4on(args=get_args()):
         sys.stdout.flush()
 
 
-    with open(os.path.join(args.logdir, log_name_prefix, "performance_of_transferred_offline_policies.json"), "w") as f:
+    with open(os.path.join(experiment_result_dir, "performance_of_transferred_offline_policies.json"), "w") as f:
         json.dump(performance_of_transferred_offline_policies, f, indent=4)
 
     online_policy_test_rewards = online_logger.retrieve_info_from_log("test/reward")
-    with open(os.path.join(args.logdir, log_name_prefix, "online_policy_test_rewards.json"), "w") as f:
+    with open(os.path.join(experiment_result_dir, "online_policy_test_rewards.json"), "w") as f:
         json.dump(online_policy_test_rewards, f, indent=4)
 
 if __name__ == "__main__":
