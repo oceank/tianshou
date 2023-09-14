@@ -42,9 +42,10 @@ class OnlinePolicyExperienceCollectionSetting:
                 return 0.5
             performances = np.array([online_policy_test_performance, self.setting_value])
             # Shift and scale the performances to [0, 10)
-            performances = performances - performances.min() # shift the lowest value to 0
-            num_digits_before_decimal = int(np.log10(performances.max()))
-            temperature = np.power(10, num_digits_before_decimal)
+            #performances = performances - performances.min() # shift the lowest value to 0
+            #num_digits_before_decimal = int(np.log10(performances.max()))
+            #temperature = np.power(10, num_digits_before_decimal)
+            temperature = 1000
             performances = performances / temperature
             probs = self.softmax(performances)
             return probs[0]
