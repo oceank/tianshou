@@ -21,7 +21,7 @@ from tianshou.trainer import offpolicy_trainer
 from tianshou.utils import TensorboardLogger, WandbLogger
 from tianshou.utils.net.common import DataParallelNet
 
-from examples.atari.utils import set_torch_seed, set_determenistic_mode
+from examples.atari.utils import set_torch_seed, set_determenistic_mode, returns_random_agent_and_human
 
 def get_args():
     parser = argparse.ArgumentParser()
@@ -74,6 +74,8 @@ def get_args():
         help="watch the play of pre-trained policy only"
     )
     parser.add_argument("--save-buffer-name", type=str, default=None)
+    ## disable cudnn for avoding inconsistent randomness across machines
+    parser.add_argument("--disable-cudnn", action="store_true")
     return parser.parse_args()
 
 
@@ -86,7 +88,7 @@ def test_qrdqn(args=get_args()):
     print(f"[{datetime.datetime.now()}] The available number of GPUs: {torch.cuda.device_count()}", flush=True)
 
     # seed
-    disable_cudnn = False
+    disable_cudnn = args.disable_cudnn
     set_determenistic_mode(args.seed, disable_cudnn)
 
     # create envs
@@ -107,6 +109,9 @@ def test_qrdqn(args=get_args()):
     args.state_shape = env.observation_space.shape or env.observation_space.n
     args.action_shape = env.action_space.shape or env.action_space.n
     # should be N_FRAMES x H x W
+    game = args.task.replace("NoFrameskip-v4", "")
+    recorded_scores = returns_random_agent_and_human[game]
+    print(f"[{datetime.datetime.now()}] Game {game}: Random Agent ({recorded_scores['random']}), Human ({recorded_scores['human']})")
     print(f"[{datetime.datetime.now()}] Observations shape: {args.state_shape}", flush=True)
     print(f"[{datetime.datetime.now()}] Actions shape: {args.action_shape}", flush=True)
 
@@ -165,7 +170,7 @@ def test_qrdqn(args=get_args()):
 
     writer.add_text("args", str(args))
     if args.logger == "tensorboard":
-        logger = TensorboardLogger(writer)
+        logger = TensorboardLogger(writer, game=game)
     else:  # wandb
         logger.load(writer)
 
@@ -263,6 +268,10 @@ def test_qrdqn(args=get_args()):
     online_policy_test_rewards = logger.retrieve_info_from_log("test/reward")
     with open(os.path.join(args.logdir, log_name, "online_policy_test_rewards.json"), "w") as f:
         json.dump(online_policy_test_rewards, f, indent=4)
+
+    online_policy_test_hnss = logger.retrieve_info_from_log("test/hns")
+    with open(os.path.join(args.logdir, log_name, "online_policy_test_hnss.json"), "w") as f:
+        json.dump(online_policy_test_hnss, f, indent=4)
 
 if __name__ == "__main__":
     test_qrdqn(get_args())

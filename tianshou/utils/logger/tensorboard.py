@@ -29,12 +29,14 @@ class TensorboardLogger(BaseLogger):
         update_interval: int = 1000,
         save_interval: int = 1,
         write_flush: bool = True,
+        game = None,
     ) -> None:
         super().__init__(train_interval, test_interval, update_interval)
         self.save_interval = save_interval
         self.write_flush = write_flush
         self.last_save_step = -1
         self.writer = writer
+        self.game = game
 
     def write(self, step_type: str, step: int, data: LOG_DATA_TYPE) -> None:
         for k, v in data.items():

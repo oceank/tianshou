@@ -179,6 +179,10 @@ class BaseTrainer(ABC):
         self.best_reward_std = 0.0
         self.recent_reward = 0.0
         self.recent_reward_std = 0.0
+        self.best_hns = 0.0
+        self.best_hns_std = 0.0
+        self.recent_hns = 0.0
+        self.recent_hns_std = 0.0
 
 
         self.start_epoch = 0
@@ -252,9 +256,14 @@ class BaseTrainer(ABC):
                     self.episode_per_test, self.logger, self.env_step, self.reward_metric
                 )
             self.best_reward, self.best_reward_std = \
-                test_result["rew"], test_result["rew_std"]
+                float(test_result["rew"]), test_result["rew_std"]
             self.recent_reward, self.recent_reward_std = \
-                test_result["rew"], test_result["rew_std"]
+                float(test_result["rew"]), test_result["rew_std"]
+            self.best_hns, self.best_hns_std = \
+                test_result["hns"], test_result["hns_std"]
+            self.recent_hns, self.recent_hns_std = \
+                test_result["hns"], test_result["hns_std"]
+
 
         if self.save_best_fn:
             self.save_best_fn(self.policy)
@@ -345,7 +354,8 @@ class BaseTrainer(ABC):
             )
             info = gather_info(
                 self.start_time, self.train_collector, self.test_collector,
-                self.best_reward, self.best_reward_std, self.recent_reward, self.recent_reward_std
+                self.best_reward, self.best_reward_std, self.recent_reward, self.recent_reward_std,
+                self.best_hns, self.best_hns_std, self.recent_hns, self.recent_hns_std,
             )
             return self.epoch, epoch_stat, info
         else:
@@ -360,29 +370,38 @@ class BaseTrainer(ABC):
             self.policy, self.test_collector, self.test_fn, self.epoch,
             self.episode_per_test, self.logger, self.env_step, self.reward_metric
         )
-        self.recent_reward, self.recent_reward_std = \
-                float(test_result["rew"]), test_result["rew_std"]
-        rew, rew_std = test_result["rew"], test_result["rew_std"]
+
+        rew, rew_std = float(test_result["rew"]), test_result["rew_std"]
+        self.recent_reward, self.recent_reward_std = rew, rew_std
+        hns, hns_std = test_result["hns"], test_result["hns_std"]
+        self.recent_hns, self.recent_hns_std = hns, hns_std
+
         if self.best_epoch < 0 or self.best_reward < rew:
             self.best_epoch = self.epoch
-            self.best_reward = float(rew)
+            self.best_reward = rew
             self.best_reward_std = rew_std
+            self.best_hns = hns
+            self.best_hns_std = hns_std
             if self.save_best_fn:
                 self.save_best_fn(self.policy)
         if self.verbose:
             print(
                 f"[{datetime.datetime.now()}] "
-                f"Epoch #{self.epoch}: test_reward: {rew:.6f} ± {rew_std:.6f},"
-                f" best_reward: {self.best_reward:.6f} ± "
-                f"{self.best_reward_std:.6f} in #{self.best_epoch}",
+                f"Epoch #{self.epoch}: test_reward: {rew:.6f} ± {rew_std:.6f} (test_hns: {hns:.6f} ± {hns_std:.6f}),"
+                f" best_reward: {self.best_reward:.6f} ± {self.best_reward_std:.6f}"
+                f" (best_hns: {self.best_hns:.6f} ± {self.best_hns_std:.6f})",
                 flush=True
             )
         if not self.is_run:
             test_stat = {
                 "test_reward": rew,
                 "test_reward_std": rew_std,
+                "test_hns": hns,
+                "test_hns_std": hns_std,
                 "best_reward": self.best_reward,
                 "best_reward_std": self.best_reward_std,
+                "best_hns": self.best_hns,
+                "best_hns_std": self.best_hns_std,
                 "best_epoch": self.best_epoch
             }
         else:
@@ -425,10 +444,14 @@ class BaseTrainer(ABC):
                 )
                 self.recent_reward, self.recent_reward_std = \
                         float(test_result["rew"]), test_result["rew_std"]
+                self.recent_hns, self.recent_hns_std = \
+                        test_result["hns"], test_result["hns_std"]
                 if self.stop_fn(test_result["rew"]):
                     stop_fn_flag = True
-                    self.best_reward = test_result["rew"]
+                    self.best_reward = float(test_result["rew"])
                     self.best_reward_std = test_result["rew_std"]
+                    self.best_hns = test_result["hns"]
+                    self.best_hns_std = test_result["hns_std"]
                 else:
                     self.policy.train()
 
@@ -461,7 +484,8 @@ class BaseTrainer(ABC):
             deque(self, maxlen=0)  # feed the entire iterator into a zero-length deque
             info = gather_info(
                 self.start_time, self.train_collector, self.test_collector,
-                self.best_reward, self.best_reward_std, self.recent_reward, self.recent_reward_std
+                self.best_reward, self.best_reward_std, self.recent_reward, self.recent_reward_std,
+                self.best_hns, self.best_hns_std, self.recent_hns, self.recent_hns_std,
             )
         finally:
             self.is_run = False

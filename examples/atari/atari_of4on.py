@@ -23,7 +23,7 @@ from tianshou.trainer import offpolicy_trainer, offline_trainer, offpolicy_dualp
 from tianshou.utils import TensorboardLogger, WandbLogger
 #from tianshou.utils.net.common import DataParallelNet
 
-from examples.atari.utils import set_torch_seed, set_determenistic_mode
+from examples.atari.utils import set_torch_seed, set_determenistic_mode, returns_random_agent_and_human
 
 def get_args():
     parser = argparse.ArgumentParser()
@@ -201,6 +201,9 @@ def test_of4on(args=get_args()):
     args.state_shape = env.observation_space.shape or env.observation_space.n
     args.action_shape = env.action_space.shape or env.action_space.n
     # should be N_FRAMES x H x W
+    game = args.task.replace("NoFrameskip-v4", "")
+    recorded_scores = returns_random_agent_and_human[game]
+    print(f"[{datetime.datetime.now()}] Game {game}: Random Agent ({recorded_scores['random']}), Human ({recorded_scores['human']})")
     print(f"[{datetime.datetime.now()}] Observations shape: {args.state_shape}", flush=True)
     print(f"[{datetime.datetime.now()}] Actions shape: {args.action_shape}", flush=True)
 
@@ -286,7 +289,7 @@ def test_of4on(args=get_args()):
     offline_test_collector = Collector(offline_policy, test_envs_of, exploration_noise=True)
 
     # logging
-    def create_logger(log_name, experiment_config):
+    def create_logger(game, log_name, experiment_config):
         log_path = os.path.join(experiment_config.logdir, log_name)
         if experiment_config.logger == "wandb":
             logger = WandbLogger(
@@ -300,14 +303,14 @@ def test_of4on(args=get_args()):
 
         writer.add_text("args", str(experiment_config))
         if experiment_config.logger == "tensorboard":
-            logger = TensorboardLogger(writer)
+            logger = TensorboardLogger(writer, game=game)
         else:  # wandb
             logger.load(writer)
         return logger
 
     online_log_name = os.path.join(log_name_prefix, "online")
     # logger for online learning
-    online_logger = create_logger(online_log_name, args)
+    online_logger = create_logger(game, online_log_name, args)
     # used to bootstrap offline learning in each phase
     current_best_online_policy_path = os.path.join(online_logger.writer.log_dir, "online_policy.pth")
 
@@ -420,6 +423,8 @@ def test_of4on(args=get_args()):
     # Initialize the experience collection setting of online policy
     offline_policy_performance = 0.0 # in the first phase, only use online policy for experience collection, so we can ignore it by setting it to 0.0
     offline_policy_performance_std = 0.0
+    offline_policy_hns = 0.0
+    offline_policy_hns_std = 0.0
 
     if args.of4on_type == "DualCollect": 
         online_policy_experience_collection_setting = OnlinePolicyExperienceCollectionSetting("Fixed", 1.0)
@@ -433,7 +438,8 @@ def test_of4on(args=get_args()):
 
     phase_max_epoch = 0
     previous_phase_best_offline_policy_path = ""
-    performance_of_transferred_offline_policies = {}
+    performance_of_transferred_offline_policies = {} # averaged episode return in test
+    hns_of_transferred_offline_policies = {} # human normalized score
     resume_from_log = False
     test_performance_of_online_policy_to_resume = None
     test_performance_of_offline_policy_to_transfer = None
@@ -544,6 +550,8 @@ def test_of4on(args=get_args()):
         test_performance_of_online_policy_to_resume = {}
         test_performance_of_online_policy_to_resume["rew"] = online_training_result["recent_reward"]
         test_performance_of_online_policy_to_resume["rew_std"] = online_training_result["recent_reward_std"]
+        test_performance_of_online_policy_to_resume["hns"] = online_training_result["recent_hns"]
+        test_performance_of_online_policy_to_resume["hns_std"] = online_training_result["recent_hns_std"]
 
         print(f"[{datetime.datetime.now()}] Finish phase {phase_id} online training ...", flush=True)
         pprint.pprint(online_training_result)
@@ -555,7 +563,7 @@ def test_of4on(args=get_args()):
         print(f"[{datetime.datetime.now()}] Current replay buffer size: {len(buffer)}", flush=True)
         # logger for offline learning
         offline_log_name = os.path.join(log_name_prefix, f"offline_{phase_id}")
-        offline_logger = create_logger(offline_log_name, args)
+        offline_logger = create_logger(game, offline_log_name, args)
         save_best_offline_fn = partial(save_best_fn, policy_type="offline", log_path=offline_logger.writer.log_dir)
 
         # Initialize a new offline policy instance for each phase
@@ -596,15 +604,21 @@ def test_of4on(args=get_args()):
                 )
             offline_policy_performance = float(offline_training_result["best_reward"])
             offline_policy_performance_std = offline_training_result["best_reward_std"]
+            offline_policy_hns = float(offline_training_result["best_hns"])
+            offline_policy_hns_std = float(offline_training_result["best_hns_std"])
         else:
             if args.of4on_type == "DualCollect":
                 online_train_collector.offline_policy = offline_policy
             offline_policy_performance = float(offline_training_result["recent_reward"])
             offline_policy_performance_std = offline_training_result["recent_reward_std"]
+            offline_policy_hns = float(offline_training_result["recent_hns"])
+            offline_policy_hns_std = float(offline_training_result["recent_hns_std"])
         test_performance_of_offline_policy_to_transfer["rew"] = offline_policy_performance
         test_performance_of_offline_policy_to_transfer["rew_std"] = offline_policy_performance_std
+        test_performance_of_offline_policy_to_transfer["hns"] = offline_policy_hns
+        test_performance_of_offline_policy_to_transfer["hns_std"] = offline_policy_hns_std
         performance_of_transferred_offline_policies[phase_max_epoch*args.online_step_per_epoch] = offline_policy_performance
-
+        hns_of_transferred_offline_policies[phase_max_epoch*args.online_step_per_epoch] = offline_policy_hns
         print(f"[{datetime.datetime.now()}] Finish phase {phase_id} offline training ...", flush=True)
         pprint.pprint(offline_training_result)
         sys.stdout.flush()
@@ -612,10 +626,15 @@ def test_of4on(args=get_args()):
 
     with open(os.path.join(experiment_result_dir, "performance_of_transferred_offline_policies.json"), "w") as f:
         json.dump(performance_of_transferred_offline_policies, f, indent=4)
+    with open(os.path.join(experiment_result_dir, "hns_of_transferred_offline_policies.json"), "w") as f:
+        json.dump(hns_of_transferred_offline_policies, f, indent=4)
 
     online_policy_test_rewards = online_logger.retrieve_info_from_log("test/reward")
     with open(os.path.join(experiment_result_dir, "online_policy_test_rewards.json"), "w") as f:
         json.dump(online_policy_test_rewards, f, indent=4)
+    online_policy_test_hnss = online_logger.retrieve_info_from_log("test/hns")
+    with open(os.path.join(experiment_result_dir, "online_policy_test_hnss.json"), "w") as f:
+        json.dump(online_policy_test_hnss, f, indent=4)
 
 if __name__ == "__main__":
     test_of4on(get_args())

@@ -8,6 +8,9 @@ from tianshou.policy import BasePolicy
 from tianshou.utils import BaseLogger
 
 
+from examples.atari.utils import cal_human_normalized_score
+
+
 def test_episode(
     policy: BasePolicy,
     collector: Collector,
@@ -28,6 +31,11 @@ def test_episode(
     if reward_metric:
         rew = reward_metric(result["rews"])
         result.update(rews=rew, rew=rew.mean(), rew_std=rew.std())
+    # calculate human normalized score for the raw episode return for atari game
+    if logger.game and (not reward_metric):
+        result['hnss'] = cal_human_normalized_score(logger.game, result["rews"])
+        result['hns'] = result['hnss'].mean()
+        result['hns_std'] = result['hnss'].std()
     if logger and global_step is not None:
         logger.log_test_data(result, global_step)
     return result
@@ -40,7 +48,11 @@ def gather_info(
     best_reward: float,
     best_reward_std: float,
     recent_reward: float,
-    recent_reward_std: float
+    recent_reward_std: float,
+    best_hns: Optional[float] = None,
+    best_hns_std: Optional[float] = None,
+    recent_hns: Optional[float] = None,
+    recent_hns_std: Optional[float] = None
 ) -> Dict[str, Union[float, str]]:
     """A simple wrapper of gathering information from collectors.
 
@@ -83,6 +95,16 @@ def gather_info(
                 "train_time/model": f"{model_time:.2f}s",
             }
         )
+        if best_hns is not None: # assume best_hns_std recent_hns and recent_hns_std are availble when best_hns is available
+            result.update(
+                {
+                    "recent_hns": recent_hns,
+                    "recent_hns_std": recent_hns_std,
+                    "best_hns": best_hns,
+                    "best_hns_std": best_hns_std,
+                    "best_hns_result": f"{best_hns:.2f} ± {best_hns_std:.2f}",                    
+                }
+            )
     if train_collector is not None:
         model_time = max(0, model_time - train_collector.collect_time)
         if test_collector is not None:
