@@ -624,17 +624,17 @@ def test_of4on(args=get_args()):
         sys.stdout.flush()
 
 
-    with open(os.path.join(experiment_result_dir, "performance_of_transferred_offline_policies.json"), "w") as f:
-        json.dump(performance_of_transferred_offline_policies, f, indent=4)
-    with open(os.path.join(experiment_result_dir, "hns_of_transferred_offline_policies.json"), "w") as f:
-        json.dump(hns_of_transferred_offline_policies, f, indent=4)
+        with open(os.path.join(experiment_result_dir, "performance_of_transferred_offline_policies.json"), "a") as f:
+            json.dump(performance_of_transferred_offline_policies, f, indent=4)
+        with open(os.path.join(experiment_result_dir, "hns_of_transferred_offline_policies.json"), "a") as f:
+            json.dump(hns_of_transferred_offline_policies, f, indent=4)
 
-    online_policy_test_rewards = online_logger.retrieve_info_from_log("test/reward")
-    with open(os.path.join(experiment_result_dir, "online_policy_test_rewards.json"), "w") as f:
-        json.dump(online_policy_test_rewards, f, indent=4)
-    online_policy_test_hnss = online_logger.retrieve_info_from_log("test/hns")
-    with open(os.path.join(experiment_result_dir, "online_policy_test_hnss.json"), "w") as f:
-        json.dump(online_policy_test_hnss, f, indent=4)
+        online_policy_test_rewards = online_logger.retrieve_info_from_log("test/reward")
+        with open(os.path.join(experiment_result_dir, "online_policy_test_rewards.json"), "a") as f:
+            json.dump(online_policy_test_rewards, f, indent=4)
+        online_policy_test_hnss = online_logger.retrieve_info_from_log("test/hns")
+        with open(os.path.join(experiment_result_dir, "online_policy_test_hnss.json"), "a") as f:
+            json.dump(online_policy_test_hnss, f, indent=4)
 
 if __name__ == "__main__":
     test_of4on(get_args())
