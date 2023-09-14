@@ -84,6 +84,8 @@ def get_args():
     ## 0: args.offline_epoch, 1/2: 5X of gradients of online policy in the current phase/inferred by the current buffer
     parser.add_argument("--offline-epoch-setting", type=int, default = 0)
     parser.add_argument("--bootstrap-offline-with-online", action="store_true") # copy the best online policy to initialize offline policy
+    ## disable cudnn for avoding inconsistent randomness across machines
+    parser.add_argument("--disable-cudnn", action="store_true")
     # other training configuration
     parser.add_argument("--early-stop", type=bool, default=False)
     parser.add_argument("--resume-path", type=str, default=None)
@@ -169,7 +171,7 @@ def test_of4on(args=get_args()):
         json.dump(vars(args), f, indent=4)
 
     # seed
-    disable_cudnn = False
+    disable_cudnn = args.disable_cudnn
     set_determenistic_mode(args.seed, disable_cudnn)
 
     # create envs
