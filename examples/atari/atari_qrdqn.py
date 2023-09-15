@@ -82,10 +82,21 @@ def get_args():
 def test_qrdqn(args=get_args()):
     torch.set_num_threads(args.torch_num_threads)
 
+    # create directory for logging
+    now = datetime.datetime.now().strftime("%y%m%d-%H%M%S")
+    args.algo_name = "qrdqn"
+    log_name = os.path.join(args.task, args.algo_name, str(args.seed), now)
+    log_path = os.path.join(args.logdir, log_name)
+    os.makedirs(log_path, exist_ok=True)
+
+    # save experiment configuration
     print(f"[{datetime.datetime.now()}] experiment configuration:", flush=True)
     pprint.pprint(vars(args), indent=4)
     sys.stdout.flush()
     print(f"[{datetime.datetime.now()}] The available number of GPUs: {torch.cuda.device_count()}", flush=True)
+    with open(os.path.join(log_path, "traning_configuration.json"), "w") as f:
+        print(vars(args))
+        json.dump(vars(args), f, indent=4)
 
     # seed
     disable_cudnn = args.disable_cudnn
@@ -150,12 +161,6 @@ def test_qrdqn(args=get_args()):
     # collector
     train_collector = Collector(policy, train_envs, buffer, exploration_noise=True)
     test_collector = Collector(policy, test_envs, exploration_noise=True)
-
-    # log
-    now = datetime.datetime.now().strftime("%y%m%d-%H%M%S")
-    args.algo_name = "qrdqn"
-    log_name = os.path.join(args.task, args.algo_name, str(args.seed), now)
-    log_path = os.path.join(args.logdir, log_name)
 
     # logger
     if args.logger == "wandb":
