@@ -6,9 +6,9 @@ from numpy.random import MT19937
 from numpy.random import RandomState, SeedSequence
 
 # Returns of Random Agent and Human Beginner
-games = ["Asterix", "Gravitar", "NameThisGame", "Pong", "Qbert", "Seaquest"]
-returns_random_agent = [210.0, 173.0, 2292.3, -20.7, 163.9, 68.4]
-returns_human_beginner = [8603.3, 3351.4, 8049.0, 14.6, 13455.0, 42054.7]
+games = ["Asterix", "Gravitar", "NameThisGame", "Pong", "Qbert", "Seaquest", "SpaceInvaders"]
+returns_random_agent = [210.0, 173.0, 2292.3, -20.7, 163.9, 68.4, 148.0]
+returns_human_beginner = [8603.3, 3351.4, 8049.0, 14.6, 13455.0, 42054.7, 1688.7]
 returns_random_agent_and_human = {}
 for game, score_r, score_h in zip(games, returns_random_agent, returns_human_beginner):
     returns_random_agent_and_human[game] = {"random": score_r, "human": score_h}
