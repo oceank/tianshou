@@ -406,11 +406,26 @@ def test_of4on(args=get_args()):
     #   When the online learning finishes in the phase, the offline learning starts with the current replay buffer.
     #   The offline learning policy can be boostraped by the online learning policy in the current phase.
     #   Previous values of phase_epochs in manually setting: [5, 5, 5], [20, 10, 10, 10], [2, 1, 1, 1], [3,3], [5, 5, 5, 5]
-    epoch_per_phase = args.online_epoch // args.num_phases
-    phase_epochs = [epoch_per_phase] * args.num_phases
-    # if online_epoch is divisible by num_phases, add the residual to the first phase
-    if args.online_epoch%args.num_phases != 0:
-        phase_epochs[0] = phase_epochs[0] + (args.online_epoch%args.num_phases)
+    #
+    if (args.online_epoch*args.online_step_per_epoch == 12500000) and (args.num_phases==4):
+        if game=="Pong" or game=="NameThisGame":
+            # Because QRDQN can reach a value of hns close to above 100% within 2M steps,
+            # so set the max steps to be 2.5M and 4 phases as: [1M, 1.5M, 2M, 2.5M], where
+            # each value in the above array indicates the ending step of the corresponding phase.
+            ending_steps_of_each_phase = [1000000, 1500000, 2000000, 2500000]
+        else:
+            # for other games (Asterix, Gravitar, Qbert and Seaquest) where QRDQN can NOT
+            # reach a value of hns close to above 100% within 2M steps, set the max steps to be 12.5M
+            # and 4 phases as: [3.5M, 6.5M, 9.5M, 12.5M].
+            ending_steps_of_each_phase = [3500000, 6500000, 9500000, 12500000]
+        phase_epochs = [(ending_steps_of_each_phase[i] - ending_steps_of_each_phase[i-1])//args.online_step_per_epoch for i in range(1, len(ending_steps_of_each_phase))]
+        phase_epochs = [ending_steps_of_each_phase[0]//args.online_step_per_epoch] + phase_epochs
+    else:
+        epoch_per_phase = args.online_epoch // args.num_phases
+        phase_epochs = [epoch_per_phase] * args.num_phases
+        # if online_epoch is divisible by num_phases, add the residual to the first phase
+        if args.online_epoch%args.num_phases != 0:
+            phase_epochs[0] = phase_epochs[0] + (args.online_epoch%args.num_phases)
     print(f"[{datetime.datetime.now()}] number of epochs in each phase: {phase_epochs}")
 
     '''
