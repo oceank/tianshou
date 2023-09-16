@@ -45,8 +45,8 @@ class OnlinePolicyExperienceCollectionSetting:
             #performances = performances - performances.min() # shift the lowest value to 0
             #num_digits_before_decimal = int(np.log10(performances.max()))
             #temperature = np.power(10, num_digits_before_decimal)
-            temperature = 1000
-            performances = performances / temperature
+            #temperature = 1000
+            #performances = performances / temperature
             probs = self.softmax(performances)
             return probs[0]
         else:
@@ -182,10 +182,10 @@ class OffpolicyDualpolicyCollectionTrainer(OffpolicyTrainer):
 
         ratio = self.online_policy_experience_collection_setting.cal_online_policy_experience_collection_ratio(
                 float((1+self.iter_num)/self.num_epochs_to_run), # training progresess in percentage
-                self.recent_reward, # the test performance of the recent online policy
+                self.recent_hns, # the test performance (human normalized score) of the recent online policy
         )
         if self.online_policy_experience_collection_setting.setting_type == "Adaptive":
-            print(f"[Online Policy Experience Collection Ratioi - Adaptive] online policy's performance ({self.recent_reward}), offline policy's performnace ({self.online_policy_experience_collection_setting.setting_value}) => ratio ({ratio})")
+            print(f"[Online Policy Experience Collection Ratioi - Adaptive] online policy's performance ({self.recent_hns}), offline policy's performnace ({self.online_policy_experience_collection_setting.setting_value}) => ratio ({ratio})")
         self.train_collector.set_online_policy_collecting_ratio(ratio)
 
         return super().__next__() 

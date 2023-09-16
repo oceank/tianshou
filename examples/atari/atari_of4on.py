@@ -487,7 +487,7 @@ def test_of4on(args=get_args()):
             # Update the setting of experience collection by DualCollect for the next phase
             elif args.of4on_type == "DualCollect":
                 if args.online_policy_collecting_setting_type == "Adaptive":
-                    online_policy_collecting_setting_value = offline_policy_performance
+                    online_policy_collecting_setting_value = offline_policy_hns
                 elif args.online_policy_collecting_setting_type == "Scheduling": # scheduling inside each phase and use epoch as the step
                     online_policy_collecting_setting_value = [args.online_policy_collecting_ratio_start, args.online_policy_collecting_ratio_final]
                 elif args.online_policy_collecting_setting_type == "Fixed":
