@@ -428,6 +428,42 @@ def test_of4on(args=get_args()):
             phase_epochs[0] = phase_epochs[0] + (args.online_epoch%args.num_phases)
     print(f"[{datetime.datetime.now()}] number of epochs in each phase: {phase_epochs}")
 
+    # [buffer for offline learning]
+    # Note:
+    #   when using a priority replay buffer, add a specific buffer for offline learning into the collector of training
+    #   and reset it and add experiences correspondingly during collection. Because offline learning with a priority
+    #   replay buffer as the dataset will modify the weights of experiences in the buffer. This will impact the following
+    #   online learning unexpected if the online buffer is directly used in offline learning.
+    assert (args.offline_epoch_setting in [0, 1, 2]), f"Unsupported offline epoch setting: {args.offline_epoch_setting}"
+    buffer_for_offline_learning = None
+    # False: buffer_for_offline_learning = buffer
+    # True:  buffer_for_offline_learning.reset() and then add the corresponding experiences from buffer
+    need_reset_and_copy_from_online_buffer = False
+    # Use the recent online experience for offline learning and
+    # set the gradient steps to be 5X of the experience steps.
+    # If the buffer size is larger than the number of steps in the current phase,
+    # then retrieve the experiences of the current phase from the buffer for offline learning.
+    if args.offline_epoch_setting == 1:
+        # Assume that the number of online epochs are evenly distributed among phases.
+        # If the number of total online epochs is not divisible by the number of phases,
+        # add the rest epochs to the first phase.
+        # That is why the number of epochs in the last phase is used here.
+        if buffer.maxsize > phase_epochs[-1]*args.online_step_per_epoch:
+                need_reset_and_copy_from_online_buffer = True
+                buffer_for_offline_learning = VectorReplayBuffer(
+                    args.buffer_size,
+                    buffer_num=len(train_envs),
+                    ignore_obs_next=True,
+                    save_only_last_obs=True,
+                    stack_num=args.frames_stack
+                )
+        # if the buffer size is smaller than or equal to the number of steps in the current phase,
+        # then use the whole online buffer for offline learning. So, no need to create a new buffer for offline
+        else:
+            buffer_for_offline_learning = buffer
+    else:
+        buffer_for_offline_learning = buffer
+
     '''
     # Schedule online-policy collecting ratio using phase as the step (except phase 1)
     ratio_step = abs(args.online_policy_collecting_ratio_start - args.online_policy_collecting_ratio_final) / (args.num_phases-1-1)
@@ -478,6 +514,7 @@ def test_of4on(args=get_args()):
             if args.of4on_type == "DirectCopy":
                 if args.reset_replay_buffer_per_phase:
                     print(f"[{datetime.datetime.now()}] Reset replay buffer for the phase {phase_id}...", flush=True)
+                    online_train_collector.reset_buffer()
                     if args.random_exploration_before_each_phase:
                         exploration_policy_name = "random policy"
                     else:
@@ -575,7 +612,7 @@ def test_of4on(args=get_args()):
 
         # [offline training]
         print(f"[{datetime.datetime.now()}] Start phase {phase_id} offline training ...", flush=True)
-        print(f"[{datetime.datetime.now()}] Current replay buffer size: {len(buffer)}", flush=True)
+        print(f"[{datetime.datetime.now()}] Current online replay buffer size: {len(buffer)}", flush=True)
         # logger for offline learning
         offline_log_name = os.path.join(log_name_prefix, f"offline_{phase_id}")
         offline_logger = create_logger(game, offline_log_name, args)
@@ -585,32 +622,32 @@ def test_of4on(args=get_args()):
         offline_policy = create_offline_policy(current_best_online_policy_path)
         offline_test_collector.policy = offline_policy
 
-        buffer_for_offline_learning = None
         if args.offline_epoch_setting == 0: # use the recent buffer and user-specified number of offline epochs for offline learning.
-            buffer_for_offline_learning = buffer
             offline_epoch = args.offline_epoch
-        elif args.offline_epoch_setting == 1: # use the recent online experience for offline learning and set the gradient steps to be 5X of the experience steps
-            # if the buffer size is larger than the number of steps in the current phase,
-            # then retrieve the experiences of the current phase from the buffer for offline learning.
-            if buffer.maxsize > phase_epoch*args.online_step_per_epoch:
-                    buffer_for_offline_learning = VectorReplayBuffer(
-                        args.buffer_size,
-                        buffer_num=len(train_envs),
-                        ignore_obs_next=True,
-                        save_only_last_obs=True,
-                        stack_num=args.frames_stack
-                    )
-            # if the buffer size is smaller than or equal to the number of steps in the current phase,
-            # then use the whole buffer for offline learning.
-            else:
-                buffer_for_offline_learning = buffer
+        else: # use the recent online experience for offline learning and set the gradient steps to be 5X of the experience steps
+            # Handle the scenario when the online buffer size is larger than the number of steps in the current phase:
+            #   first reset the buffer for offline
+            #   then retrieve the experiences of the current phase from the current online buffer
+            if need_reset_and_copy_from_online_buffer:
+                buffer_for_offline_learning.reset()
+                buffer_bucket_size = buffer_for_offline_learning.buffers[0].maxsize
+                buffer_max_size = buffer_for_offline_learning.maxsize
+                # copied the corresponding experiences from the online buffer
+                buffer_ids = np.arange(args.online_training_num)
+                num_steps_of_this_phase = phase_epoch*args.online_step_per_epoch
+                # ToDo: currently assume num_steps_of_this_phase is divisiable by args.online_training_num
+                num_steps_per_env_of_this_phase = num_steps_of_this_phase//args.online_training_num
+                start_idx_1st_buffer_bucket = (len(buffer) - num_steps_of_this_phase)//args.online_training_num
+                start_indices = [start_idx_1st_buffer_bucket + phase_step for phase_step in range(0, buffer_max_size, buffer_bucket_size)]
+                start_indices = np.array(start_indices)
+                for step_idx_per_env in range(num_steps_per_env_of_this_phase):
+                    batch_indices = start_indices + step_idx_per_env
+                    retrieved_batch_experiences = buffer[batch_indices]
+                    buffer_for_offline_learning.add(retrieved_batch_experiences, buffer_ids = buffer_ids)
+
+            # calculate the number of epochs for the offline based on the number of samples in buffer_for_offline_learning
             offline_epoch = int(len(buffer_for_offline_learning) * args.online_update_per_step * 5 / args.offline_update_per_epoch)
-        elif args.offline_epoch_setting == 2: # 5X of gradient steps of online learning inferred by the current buffer
-            buffer_for_offline_learning = buffer
-            offline_epoch = int(len(buffer_for_offline_learning) * args.online_update_per_step * 5 / args.offline_update_per_epoch)
-        else:
-            raise f"Unsupported offline epoch setting: {args.offline_epoch_setting}"
-        print(f"[{datetime.datetime.now()}] Phase {phase_id} offline learning epochs: {offline_epoch}", flush=True)
+        print(f"[{datetime.datetime.now()}] Phase {phase_id}: offline buffer size ({len(buffer_for_offline_learning)}), offline learning epochs ({offline_epoch})", flush=True)
 
         offline_training_result = offline_trainer(
             offline_policy,
