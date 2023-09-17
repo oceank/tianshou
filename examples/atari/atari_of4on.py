@@ -585,17 +585,36 @@ def test_of4on(args=get_args()):
         offline_policy = create_offline_policy(current_best_online_policy_path)
         offline_test_collector.policy = offline_policy
 
-        if args.offline_epoch_setting == 1: # 5X of gradient steps of online learning in the current phase
-            offline_epoch = int(phase_epoch * args.online_step_per_epoch * args.online_update_per_step * 5 / args.offline_update_per_epoch)
-        elif args.offline_epoch_setting == 2: # 5X of gradient steps of online learning inferred by the current buffer
-            offline_epoch = int(len(buffer) * args.online_update_per_step * 5 / args.offline_update_per_epoch)
-        else:
+        buffer_for_offline_learning = None
+        if args.offline_epoch_setting == 0: # use the recent buffer and user-specified number of offline epochs for offline learning.
+            buffer_for_offline_learning = buffer
             offline_epoch = args.offline_epoch
+        elif args.offline_epoch_setting == 1: # use the recent online experience for offline learning and set the gradient steps to be 5X of the experience steps
+            # if the buffer size is larger than the number of steps in the current phase,
+            # then retrieve the experiences of the current phase from the buffer for offline learning.
+            if buffer.maxsize > phase_epoch*args.online_step_per_epoch:
+                    buffer_for_offline_learning = VectorReplayBuffer(
+                        args.buffer_size,
+                        buffer_num=len(train_envs),
+                        ignore_obs_next=True,
+                        save_only_last_obs=True,
+                        stack_num=args.frames_stack
+                    )
+            # if the buffer size is smaller than or equal to the number of steps in the current phase,
+            # then use the whole buffer for offline learning.
+            else:
+                buffer_for_offline_learning = buffer
+            offline_epoch = int(len(buffer_for_offline_learning) * args.online_update_per_step * 5 / args.offline_update_per_epoch)
+        elif args.offline_epoch_setting == 2: # 5X of gradient steps of online learning inferred by the current buffer
+            buffer_for_offline_learning = buffer
+            offline_epoch = int(len(buffer_for_offline_learning) * args.online_update_per_step * 5 / args.offline_update_per_epoch)
+        else:
+            raise f"Unsupported offline epoch setting: {args.offline_epoch_setting}"
         print(f"[{datetime.datetime.now()}] Phase {phase_id} offline learning epochs: {offline_epoch}", flush=True)
 
         offline_training_result = offline_trainer(
             offline_policy,
-            buffer,
+            buffer_for_offline_learning,
             offline_test_collector,
             offline_epoch, #args.offline_epoch,
             args.offline_update_per_epoch,
