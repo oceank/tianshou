@@ -47,7 +47,7 @@ def get_args():
     parser.add_argument("--exploration-duration", type=int, default=1000000)
     parser.add_argument("--buffer-size", type=int, default=1000000)
     parser.add_argument("--replay-buffer-min-size", type=int, default=50000)
-    parser.add_argument("--online_lr", type=float, default=0.00005)
+    parser.add_argument("--online-lr", type=float, default=0.00005)
     parser.add_argument("--online-gamma", type=float, default=0.99)
     parser.add_argument("--online-num-quantiles", type=int, default=200)
     parser.add_argument("--online-n-step", type=int, default=1)
@@ -72,8 +72,10 @@ def get_args():
     parser.add_argument("--num-phases", type=int, default=5) # by default, one phase has 10 online epochs
     parser.add_argument("--of4on-type", type=str, default="DirectCopy") # DirectCopy, DualCollection, PEX(ToDo)
     ## For DirectCopy
+    ### for phases with a id > 1
     parser.add_argument("--reset-replay-buffer-per-phase", action="store_true")
-    parser.add_argument("--random-exploration-before-each-phase", action="store_true") # for phases with a id > 1
+    parser.add_argument("--random-exploration-before-each-phase", action="store_true")
+    parser.add_argument("--reset-greedy-exploration-per-phase", action="store_true")
     ## For DualCollect
     parser.add_argument("--online-policy-collecting-setting-type", type=str, default="Fixed") # Fixed, Scheduling, Adaptive
     parser.add_argument("--online-policy-collecting-ratio", type=float, default=1.0) # 1.0, 0.75, 0.5, 0.25
@@ -86,6 +88,7 @@ def get_args():
     parser.add_argument("--bootstrap-offline-with-online", action="store_true") # copy the best online policy to initialize offline policy
     ## disable cudnn for avoding inconsistent randomness across machines
     parser.add_argument("--disable-cudnn", action="store_true")
+
     # other training configuration
     parser.add_argument("--early-stop", type=bool, default=False)
     parser.add_argument("--resume-path", type=str, default=None)
@@ -336,11 +339,17 @@ def test_of4on(args=get_args()):
 
     def stop_offline_fn(mean_rewards):
         return False
-    
+
+    exploration_start_step = 0
     def train_online_fn(epoch, env_step):
+        # env_step is the global elapsed steps
+        if args.reset_greedy_exploration_per_phase:
+           elapsed_env_step = env_step -  exploration_start_step
+        else:
+            elapsed_env_step = env_step
         # nature DQN setting, linear decay in the first 1M steps
-        if env_step <= args.exploration_duration:
-            eps = args.eps_train - env_step / args.exploration_duration * \
+        if elapsed_env_step <= args.exploration_duration:
+            eps = args.eps_train - elapsed_env_step / args.exploration_duration * \
                 (args.eps_train - args.eps_train_final)
         else:
             eps = args.eps_train_final
@@ -523,6 +532,11 @@ def test_of4on(args=get_args()):
                     online_train_collector.collect(
                             n_step=args.replay_buffer_min_size,
                             random=args.random_exploration_before_each_phase)
+
+                # reset the epsilon value of the greedy exploration
+                if args.reset_greedy_exploration_per_phase:
+                    exploration_start_step += (phase_epoch*args.online_step_per_epoch)
+
                 # a fresh new optimizer is created inside the function call.
                 if args.transfer_best_offline_policy:
                     online_policy = create_online_policy(previous_phase_best_offline_policy_path)
