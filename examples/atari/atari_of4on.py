@@ -71,6 +71,8 @@ def get_args():
     # offline for online
     parser.add_argument("--num-phases", type=int, default=5) # by default, one phase has 10 online epochs
     parser.add_argument("--of4on-type", type=str, default="DirectCopy") # DirectCopy, DualCollection, PEX(ToDo)
+    ## save the current online buffer to disk at the end of each phase
+    parser.add_argument("--save-buffer", action="store_true")
     ## For DirectCopy
     ### for phases with a id > 1
     parser.add_argument("--reset-replay-buffer-per-phase", action="store_true")

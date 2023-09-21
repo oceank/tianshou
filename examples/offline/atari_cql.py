@@ -139,7 +139,8 @@ def test_discrete_cql(args=get_args()):
     writer = SummaryWriter(log_path)
     writer.add_text("args", str(args))
     if args.logger == "tensorboard":
-        logger = TensorboardLogger(writer)
+        game = args.task.replace("NoFrameskip-v4", "")
+        logger = TensorboardLogger(writer, game=game)
     else:  # wandb
         logger.load(writer)
 

@@ -70,12 +70,13 @@ class BaseLogger(ABC):
             log_data = {
                 "test/env_step": step,
                 "test/reward": collect_result["rew"],
-                "test/hns": collect_result["hns"],
                 "test/length": collect_result["len"],
                 "test/reward_std": collect_result["rew_std"],
-                "test/hns_std": collect_result["hns_std"],
                 "test/length_std": collect_result["len_std"],
             }
+            if "hns" in collect_result:
+                log_data["test/hns"] = collect_result["hns"]
+                log_data["test/hns_std"] = collect_result["hns_std"]
             self.write("test/env_step", step, log_data)
             self.last_log_test_step = step
 

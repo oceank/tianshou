@@ -21,7 +21,7 @@ from tianshou.trainer import offpolicy_trainer
 from tianshou.utils import TensorboardLogger, WandbLogger
 from tianshou.utils.net.common import DataParallelNet
 
-from examples.atari.utils import set_torch_seed, set_determenistic_mode, returns_random_agent_and_human
+from examples.atari.utils import set_torch_seed, set_determenistic_mode, returns_random_agent_and_human, cal_human_normalized_score
 
 def get_args():
     parser = argparse.ArgumentParser()
@@ -37,6 +37,7 @@ def get_args():
     parser.add_argument("--exploration-duration", type=int, default=1000000)
     parser.add_argument("--buffer-size", type=int, default=1000000)
     parser.add_argument("--replay-buffer-min-size", type=int, default=50000)
+    parser.add_argument("--save-buffer", action="store_true")
     parser.add_argument("--lr", type=float, default=0.00005)
     parser.add_argument("--gamma", type=float, default=0.99)
     parser.add_argument("--num-quantiles", type=int, default=200)
@@ -224,6 +225,9 @@ def test_qrdqn(args=get_args()):
             )
             collector = Collector(policy, test_envs, buffer, exploration_noise=True)
             result = collector.collect(n_step=args.buffer_size)
+            result['hnss'] = cal_human_normalized_score(logger.game, result["rews"])
+            result['hns'] = result['hnss'].mean()
+            result['hns_std'] = result['hnss'].std()
             print(f"[{datetime.datetime.now()}] Save buffer into: {args.save_buffer_name}", flush=True)
             # Unfortunately, pickle will cause oom with 1M buffer size
             buffer.save_hdf5(args.save_buffer_name)
@@ -269,6 +273,10 @@ def test_qrdqn(args=get_args()):
     pprint.pprint(result)
     sys.stdout.flush()
     #watch()
+
+    if args.save_buffer:
+        buffer_filepath = os.path.join(args.logdir, log_name, "buffer.hdf5")
+        buffer.save_hdf5(buffer_filepath)
 
     online_policy_test_rewards = logger.retrieve_info_from_log("test/reward")
     with open(os.path.join(args.logdir, log_name, "online_policy_test_rewards.json"), "w") as f:
