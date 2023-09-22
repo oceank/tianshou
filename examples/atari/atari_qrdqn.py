@@ -275,7 +275,7 @@ def test_qrdqn(args=get_args()):
     #watch()
 
     if args.save_buffer:
-        buffer_filepath = os.path.join(args.logdir, log_name, "buffer.hdf5")
+        buffer_filepath = os.path.join(args.logdir, log_name, f"buffer_{len(buffer)}.hdf5")
         buffer.save_hdf5(buffer_filepath)
 
     online_policy_test_rewards = logger.retrieve_info_from_log("test/reward")
