@@ -3,8 +3,10 @@
 import argparse
 import datetime
 import os
+import sys
 import pickle
 import pprint
+import json
 
 import numpy as np
 import torch
@@ -13,16 +15,21 @@ from torch.utils.tensorboard import SummaryWriter
 from examples.atari.atari_network import QRDQN
 from examples.atari.atari_wrapper import make_atari_env
 from examples.offline.utils import load_buffer
-from tianshou.data import Collector, VectorReplayBuffer
+from tianshou.data import Collector, VectorReplayBuffer, ReplayBuffer
 from tianshou.policy import DiscreteCQLPolicy
 from tianshou.trainer import offline_trainer
 from tianshou.utils import TensorboardLogger, WandbLogger
 
+from examples.atari.utils import set_torch_seed, set_determenistic_mode, returns_random_agent_and_human
 
 def get_args():
     parser = argparse.ArgumentParser()
+    parser.add_argument("--torch-num-threads", type=int, default=4)
+    parser.add_argument("--test-env-num-threads", type=int, default=5)
     parser.add_argument("--task", type=str, default="PongNoFrameskip-v4")
     parser.add_argument("--seed", type=int, default=1626)
+    parser.add_argument("--buffer-size", type=int, default=1000000)
+    parser.add_argument("--top-x-percent", type=int, default=10)
     parser.add_argument("--eps-test", type=float, default=0.001)
     parser.add_argument("--lr", type=float, default=0.0001)
     parser.add_argument("--gamma", type=float, default=0.99)
@@ -69,12 +76,48 @@ def get_args():
 
 
 def test_discrete_cql(args=get_args()):
+    torch.set_num_threads(args.torch_num_threads)
+
+    print(f"[{datetime.datetime.now()}] experiment configuration:", flush=True)
+    pprint.pprint(vars(args), indent=4)
+    sys.stdout.flush()
+
+    # log
+    now = datetime.datetime.now().strftime("%y%m%d-%H%M%S")
+    args.algo_name = "cql" + f"-top{args.top_x_percent}percentbuffer"
+    log_name = os.path.join(args.task, args.algo_name, str(args.seed), now)
+    log_path = os.path.join(args.logdir, log_name)
+
+    # logger
+    if args.logger == "wandb":
+        logger = WandbLogger(
+            save_interval=1,
+            name=log_name.replace(os.path.sep, "__"),
+            run_id=args.resume_id,
+            config=args,
+            project=args.wandb_project,
+        )
+    writer = SummaryWriter(log_path)
+    writer.add_text("args", str(args))
+    if args.logger == "tensorboard":
+        game = args.task.replace("NoFrameskip-v4", "")
+        logger = TensorboardLogger(writer, game=game)
+    else:  # wandb
+        logger.load(writer)
+
+    with open(os.path.join(log_path, "traning_configuration.json"), "w") as f:
+        json.dump(vars(args), f, indent=4)
+
+    set_determenistic_mode(args.seed, disable_cudnn=False)
+    
     # envs
     env, _, test_envs = make_atari_env(
         args.task,
         args.seed,
         1,
         args.test_num,
+        train_env_num_threads = 1,
+        test_env_num_threads = args.test_env_num_threads,
         scale=args.scale_obs,
         frame_stack=args.frames_stack,
     )
@@ -112,7 +155,8 @@ def test_discrete_cql(args=get_args()):
         if args.load_buffer_name.endswith(".pkl"):
             buffer = pickle.load(open(args.load_buffer_name, "rb"))
         elif args.load_buffer_name.endswith(".hdf5"):
-            buffer = VectorReplayBuffer.load_hdf5(args.load_buffer_name)
+            #buffer = VectorReplayBuffer.load_hdf5(args.load_buffer_name)
+            buffer = ReplayBuffer.load_hdf5(args.load_buffer_name)
         else:
             print(f"Unknown buffer format: {args.load_buffer_name}")
             exit(0)
@@ -120,29 +164,6 @@ def test_discrete_cql(args=get_args()):
 
     # collector
     test_collector = Collector(policy, test_envs, exploration_noise=True)
-
-    # log
-    now = datetime.datetime.now().strftime("%y%m%d-%H%M%S")
-    args.algo_name = "cql"
-    log_name = os.path.join(args.task, args.algo_name, str(args.seed), now)
-    log_path = os.path.join(args.logdir, log_name)
-
-    # logger
-    if args.logger == "wandb":
-        logger = WandbLogger(
-            save_interval=1,
-            name=log_name.replace(os.path.sep, "__"),
-            run_id=args.resume_id,
-            config=args,
-            project=args.wandb_project,
-        )
-    writer = SummaryWriter(log_path)
-    writer.add_text("args", str(args))
-    if args.logger == "tensorboard":
-        game = args.task.replace("NoFrameskip-v4", "")
-        logger = TensorboardLogger(writer, game=game)
-    else:  # wandb
-        logger.load(writer)
 
     def save_best_fn(policy):
         torch.save(policy.state_dict(), os.path.join(log_path, "policy.pth"))
