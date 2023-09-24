@@ -27,7 +27,6 @@ from tianshou.data import ReplayBuffer
 
 def extract_top_x_percent_episode(buffer, top_x_percent, buffer_size=1000000, frame_stack=4):
     # calculate the supporting information for the selection of top episodes
-    top_x_percent = 0.1
     ep_done_indices = np.where(buffer.done==True)[0]
     ep_start_indices = np.zeros_like(ep_done_indices)
     ep_start_indices[1:] = ep_done_indices[:-1]
