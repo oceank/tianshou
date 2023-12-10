@@ -157,6 +157,7 @@ class BaseTrainer(ABC):
         test_in_train: bool = True,
         save_fn: Optional[Callable[[BasePolicy], None]] = None,
         test_performance_of_initial_policy_from_log: Optional[dict] = None,
+        cal_hns: Optional[bool] = None,
     ):
         if save_fn:
             deprecation(
@@ -179,10 +180,12 @@ class BaseTrainer(ABC):
         self.best_reward_std = 0.0
         self.recent_reward = 0.0
         self.recent_reward_std = 0.0
-        self.best_hns = 0.0
-        self.best_hns_std = 0.0
-        self.recent_hns = 0.0
-        self.recent_hns_std = 0.0
+        self.cal_hns = cal_hns
+        if self.cal_hns:
+            self.best_hns = 0.0
+            self.best_hns_std = 0.0
+            self.recent_hns = 0.0
+            self.recent_hns_std = 0.0
 
 
         self.start_epoch = 0
@@ -259,10 +262,12 @@ class BaseTrainer(ABC):
                 float(test_result["rew"]), test_result["rew_std"]
             self.recent_reward, self.recent_reward_std = \
                 float(test_result["rew"]), test_result["rew_std"]
-            self.best_hns, self.best_hns_std = \
-                test_result["hns"], test_result["hns_std"]
-            self.recent_hns, self.recent_hns_std = \
-                test_result["hns"], test_result["hns_std"]
+            # FixMe: for atari games
+            if self.cal_hns:
+                self.best_hns, self.best_hns_std = \
+                    test_result["hns"], test_result["hns_std"]
+                self.recent_hns, self.recent_hns_std = \
+                    test_result["hns"], test_result["hns_std"]
 
 
         if self.save_best_fn:
@@ -352,11 +357,17 @@ class BaseTrainer(ABC):
                     "n/st": int(result["n/st"]),
                 }
             )
-            info = gather_info(
-                self.start_time, self.train_collector, self.test_collector,
-                self.best_reward, self.best_reward_std, self.recent_reward, self.recent_reward_std,
-                self.best_hns, self.best_hns_std, self.recent_hns, self.recent_hns_std,
-            )
+            if self.cal_hns:
+                info = gather_info(
+                    self.start_time, self.train_collector, self.test_collector,
+                    self.best_reward, self.best_reward_std, self.recent_reward, self.recent_reward_std,
+                    self.best_hns, self.best_hns_std, self.recent_hns, self.recent_hns_std,
+                )
+            else:
+                info = gather_info(
+                    self.start_time, self.train_collector, self.test_collector,
+                    self.best_reward, self.best_reward_std, self.recent_reward, self.recent_reward_std,
+                )
             return self.epoch, epoch_stat, info
         else:
             return None
@@ -373,37 +384,56 @@ class BaseTrainer(ABC):
 
         rew, rew_std = float(test_result["rew"]), test_result["rew_std"]
         self.recent_reward, self.recent_reward_std = rew, rew_std
-        hns, hns_std = test_result["hns"], test_result["hns_std"]
-        self.recent_hns, self.recent_hns_std = hns, hns_std
+        if self.cal_hns:
+            hns, hns_std = test_result["hns"], test_result["hns_std"]
+            self.recent_hns, self.recent_hns_std = hns, hns_std
 
         if self.best_epoch < 0 or self.best_reward < rew:
             self.best_epoch = self.epoch
             self.best_reward = rew
             self.best_reward_std = rew_std
-            self.best_hns = hns
-            self.best_hns_std = hns_std
+            if self.cal_hns:
+                self.best_hns = hns
+                self.best_hns_std = hns_std
             if self.save_best_fn:
                 self.save_best_fn(self.policy)
         if self.verbose:
-            print(
-                f"[{datetime.datetime.now()}] "
-                f"Epoch #{self.epoch}: test_reward: {rew:.6f} ± {rew_std:.6f} (test_hns: {hns:.6f} ± {hns_std:.6f}),"
-                f" best_reward: {self.best_reward:.6f} ± {self.best_reward_std:.6f}"
-                f" (best_hns: {self.best_hns:.6f} ± {self.best_hns_std:.6f})",
-                flush=True
-            )
+            if self.cal_hns:
+                print(
+                    f"[{datetime.datetime.now()}] "
+                    f"Epoch #{self.epoch}: test_reward: {rew:.6f} ± {rew_std:.6f} (test_hns: {hns:.6f} ± {hns_std:.6f}),"
+                    f" best_reward: {self.best_reward:.6f} ± {self.best_reward_std:.6f}"
+                    f" (best_hns: {self.best_hns:.6f} ± {self.best_hns_std:.6f})",
+                    flush=True
+                )
+            else:
+                print(
+                    f"[{datetime.datetime.now()}] "
+                    f"Epoch #{self.epoch}: test_reward: {rew:.6f} ± {rew_std:.6f},"
+                    f" best_reward: {self.best_reward:.6f} ± {self.best_reward_std:.6f}",
+                    flush=True
+                )
         if not self.is_run:
-            test_stat = {
-                "test_reward": rew,
-                "test_reward_std": rew_std,
-                "test_hns": hns,
-                "test_hns_std": hns_std,
-                "best_reward": self.best_reward,
-                "best_reward_std": self.best_reward_std,
-                "best_hns": self.best_hns,
-                "best_hns_std": self.best_hns_std,
-                "best_epoch": self.best_epoch
-            }
+            if self.cal_hns:
+                test_stat = {
+                    "test_reward": rew,
+                    "test_reward_std": rew_std,
+                    "test_hns": hns,
+                    "test_hns_std": hns_std,
+                    "best_reward": self.best_reward,
+                    "best_reward_std": self.best_reward_std,
+                    "best_hns": self.best_hns,
+                    "best_hns_std": self.best_hns_std,
+                    "best_epoch": self.best_epoch
+                }
+            else:
+                test_stat = {
+                    "test_reward": rew,
+                    "test_reward_std": rew_std,
+                    "best_reward": self.best_reward,
+                    "best_reward_std": self.best_reward_std,
+                    "best_epoch": self.best_epoch
+                }                
         else:
             test_stat = {}
         if self.stop_fn and self.stop_fn(self.best_reward):
@@ -444,14 +474,16 @@ class BaseTrainer(ABC):
                 )
                 self.recent_reward, self.recent_reward_std = \
                         float(test_result["rew"]), test_result["rew_std"]
-                self.recent_hns, self.recent_hns_std = \
-                        test_result["hns"], test_result["hns_std"]
+                if self.cal_hns:
+                    self.recent_hns, self.recent_hns_std = \
+                            test_result["hns"], test_result["hns_std"]
                 if self.stop_fn(test_result["rew"]):
                     stop_fn_flag = True
                     self.best_reward = float(test_result["rew"])
                     self.best_reward_std = test_result["rew_std"]
-                    self.best_hns = test_result["hns"]
-                    self.best_hns_std = test_result["hns_std"]
+                    if self.cal_hns:
+                        self.best_hns = test_result["hns"]
+                        self.best_hns_std = test_result["hns_std"]
                 else:
                     self.policy.train()
 
@@ -482,11 +514,17 @@ class BaseTrainer(ABC):
         try:
             self.is_run = True
             deque(self, maxlen=0)  # feed the entire iterator into a zero-length deque
-            info = gather_info(
-                self.start_time, self.train_collector, self.test_collector,
-                self.best_reward, self.best_reward_std, self.recent_reward, self.recent_reward_std,
-                self.best_hns, self.best_hns_std, self.recent_hns, self.recent_hns_std,
-            )
+            if self.cal_hns:
+                info = gather_info(
+                    self.start_time, self.train_collector, self.test_collector,
+                    self.best_reward, self.best_reward_std, self.recent_reward, self.recent_reward_std,
+                    self.best_hns, self.best_hns_std, self.recent_hns, self.recent_hns_std,
+                )
+            else:
+                info = gather_info(
+                    self.start_time, self.train_collector, self.test_collector,
+                    self.best_reward, self.best_reward_std, self.recent_reward, self.recent_reward_std,
+                )                
         finally:
             self.is_run = False
 
