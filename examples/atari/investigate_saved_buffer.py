@@ -73,12 +73,16 @@ def investigate_buffer(args=get_args()):
         print(e)
     
     print(f"Buffer loaded: {len(buffer)} samples")
-    top_x_percent_list = [0.1, 0.2, 0.5]
+    top_x_percent_list = [0.1, 0.2, 0.5, 1.0]
     for top_x_percent in top_x_percent_list:
-        sel_buffer = extract_top_x_percent_episode(buffer, top_x_percent)
-        print(f"[Top {top_x_percent*100}%100]: Extracted {len(sel_buffer)} samples")
         sel_path = args.saved_buffer_filepath.replace(".hdf5", f"_top{int(top_x_percent*100)}.hdf5")
-        sel_buffer.save_hdf5(sel_path, compression="gzip")
+        if os.path.isfile(sel_path):
+            print(f"[Top {top_x_percent*100}%100 episodes]: exists at {sel_path}")
+        else:
+            sel_buffer = extract_top_x_percent_episode(buffer, top_x_percent)
+            print(f"[Top {top_x_percent*100}%100 episodes]: Extracted {len(sel_buffer)} samples")
+            sel_path = args.saved_buffer_filepath.replace(".hdf5", f"_top{int(top_x_percent*100)}.hdf5")
+            sel_buffer.save_hdf5(sel_path, compression="gzip")
     print("Done")
 
 if __name__ == "__main__":

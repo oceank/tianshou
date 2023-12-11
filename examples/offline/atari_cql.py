@@ -29,7 +29,8 @@ def get_args():
     parser.add_argument("--task", type=str, default="PongNoFrameskip-v4")
     parser.add_argument("--seed", type=int, default=1626)
     parser.add_argument("--buffer-size", type=int, default=1000000)
-    parser.add_argument("--top-x-percent", type=int, default=10)
+    parser.add_argument("--top-x-percent", type=int, default=100)
+    parser.add_argument("--buffer-saved-step", type=str, default="final")
     parser.add_argument("--eps-test", type=float, default=0.001)
     parser.add_argument("--lr", type=float, default=0.0001)
     parser.add_argument("--gamma", type=float, default=0.99)
@@ -45,6 +46,7 @@ def get_args():
     parser.add_argument("--frames-stack", type=int, default=4)
     parser.add_argument("--scale-obs", type=int, default=0)
     parser.add_argument("--logdir", type=str, default="log")
+    parser.add_argument("--show-progress", action="store_true")
     parser.add_argument("--render", type=float, default=0.)
     parser.add_argument("--resume-path", type=str, default=None)
     parser.add_argument("--resume-id", type=str, default=None)
@@ -84,7 +86,7 @@ def test_discrete_cql(args=get_args()):
 
     # log
     now = datetime.datetime.now().strftime("%y%m%d-%H%M%S")
-    args.algo_name = "cql" + f"-top{args.top_x_percent}percentbuffer"
+    args.algo_name = "cql" + f"-top{args.top_x_percent}percentbuffersavedat{args.buffer_saved_step}step"
     log_name = os.path.join(args.task, args.algo_name, str(args.seed), now)
     log_path = os.path.join(args.logdir, log_name)
 
@@ -199,6 +201,7 @@ def test_discrete_cql(args=get_args()):
         stop_fn=stop_fn,
         save_best_fn=save_best_fn,
         logger=logger,
+        show_progress=args.show_progress
     )
 
     pprint.pprint(result)
