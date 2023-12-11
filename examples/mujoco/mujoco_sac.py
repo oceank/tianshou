@@ -63,10 +63,14 @@ def get_args():
     )
     parser.add_argument("--show-progress", default=False, action="store_true")
     parser.add_argument("--save-interval", type=int, default=20) # save checkpoint every 20 epochs (100k steps)
+    parser.add_argument("--torch-num-threads", type=int, default=4)
+
     return parser.parse_args()
 
 
 def test_sac(args=get_args()):
+    torch.set_num_threads(args.torch_num_threads)
+
     env, train_envs, test_envs = make_mujoco_env(
         args.task, args.seed, args.training_num, args.test_num, obs_norm=False
     )
