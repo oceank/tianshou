@@ -62,6 +62,7 @@ def get_args():
         action="store_true",
         help="watch the play of pre-trained policy only",
     )
+    parser.add_argument("--show-progress", default=False, action="store_true")
     return parser.parse_args()
 
 
@@ -177,6 +178,7 @@ def test_td3(args=get_args()):
             logger=logger,
             update_per_step=args.update_per_step,
             test_in_train=False,
+            show_progress=args.show_progress,
         )
         pprint.pprint(result)
 

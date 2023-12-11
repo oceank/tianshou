@@ -70,6 +70,7 @@ def get_args():
         action="store_true",
         help="watch the play of pre-trained policy only",
     )
+    parser.add_argument("--show-progress", default=False, action="store_true")
     return parser.parse_args()
 
 
@@ -217,6 +218,7 @@ def test_ppo(args=get_args()):
             save_best_fn=save_best_fn,
             logger=logger,
             test_in_train=False,
+            show_progress=args.show_progress,
         )
         pprint.pprint(result)
 

@@ -211,6 +211,7 @@ def test_sac(args=get_args()):
             logger=logger,
             update_per_step=args.update_per_step,
             test_in_train=False,
+            show_progress=args.show_progress,
         )
         pprint.pprint(result)
 
