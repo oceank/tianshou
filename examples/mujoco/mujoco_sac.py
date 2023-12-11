@@ -4,6 +4,7 @@ import argparse
 import datetime
 import os
 import pprint
+import json
 
 import numpy as np
 import torch
@@ -60,6 +61,8 @@ def get_args():
         action="store_true",
         help="watch the play of pre-trained policy only",
     )
+    parser.add_argument("--show-progress", default=False, action="store_true")
+    parser.add_argument("--save-interval", type=int, default=20) # save checkpoint every 20 epochs (100k steps)
     return parser.parse_args()
 
 
@@ -157,14 +160,42 @@ def test_sac(args=get_args()):
     writer = SummaryWriter(log_path)
     writer.add_text("args", str(args))
     if args.logger == "tensorboard":
-        logger = TensorboardLogger(writer)
+        logger = TensorboardLogger(writer, save_interval=args.save_interval)
     else:  # wandb
         logger.load(writer)
 
     def save_best_fn(policy):
         torch.save(policy.state_dict(), os.path.join(log_path, "policy.pth"))
 
+    def save_checkpoint_fn(epoch, env_step, gradient_step):
+        print(
+            f"[{datetime.datetime.now()}] "
+            f"Epoch #{epoch} Save the policy and replay buffer",
+            flush=True
+            )
+
+        # see also: https://pytorch.org/tutorials/beginner/saving_loading_models.html
+        ckpt_path = os.path.join(log_path, f"checkpoint_epoch{epoch}.pth")
+        buffer_filepath = os.path.join(args.logdir, log_name, f"buffer.hdf5")
+
+        print(f"\t===> Policy: saving at {ckpt_path}")
+        print(f"\t===> Buffer: saving at {buffer_filepath}")
+
+        torch.save({"model": policy.state_dict()}, ckpt_path)
+        buffer.save_hdf5(buffer_filepath, compression="gzip")
+
+        if epoch > 0:
+            online_policy_test_rewards = logger.retrieve_info_from_log("test/reward")
+            with open(os.path.join(args.logdir, log_name, "online_policy_test_return.json"), "w") as f:
+                json.dump(online_policy_test_rewards, f, indent=4)
+
+        return ckpt_path
+
     if not args.watch:
+        # save the initial policy and replay buffer
+        save_checkpoint_fn(0, 0, 0)
+        logger.last_save_step = 0
+
         # trainer
         result = offpolicy_trainer(
             policy,
@@ -176,11 +207,20 @@ def test_sac(args=get_args()):
             args.test_num,
             args.batch_size,
             save_best_fn=save_best_fn,
+            save_checkpoint_fn=save_checkpoint_fn,
             logger=logger,
             update_per_step=args.update_per_step,
             test_in_train=False,
         )
         pprint.pprint(result)
+
+        # Save the final replay buffer
+        buffer_filepath = os.path.join(args.logdir, log_name, f"buffer.hdf5")
+        buffer.save_hdf5(buffer_filepath, compression="gzip")
+
+        online_policy_test_rewards = logger.retrieve_info_from_log("test/reward")
+        with open(os.path.join(args.logdir, log_name, "online_policy_test_return.json"), "w") as f:
+            json.dump(online_policy_test_rewards, f, indent=4)
 
     # Let's watch its performance!
     policy.eval()
