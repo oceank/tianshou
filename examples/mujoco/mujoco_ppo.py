@@ -206,6 +206,22 @@ def test_ppo(args=get_args()):
         state = {"model": policy.state_dict(), "obs_rms": train_envs.get_obs_rms()}
         torch.save(state, os.path.join(log_path, "policy.pth"))
 
+    def save_checkpoint_fn(epoch, env_step, gradient_step):
+        print(
+            f"[{datetime.datetime.now()}] "
+            f"Epoch #{epoch} Save the evaluation performance of the learned policy",
+            flush=True
+            )
+        ckpt_path = ""
+        if epoch > 0:
+            ckpt_path = os.path.join(args.logdir, log_name, "online_policy_test_return.json")
+            online_policy_test_rewards = logger.retrieve_info_from_log("test/reward")
+            with open(ckpt_path, "w") as f:
+                json.dump(online_policy_test_rewards, f, indent=4)
+
+        return ckpt_path
+
+
     if not args.watch:
         # trainer
         result = onpolicy_trainer(
@@ -219,11 +235,16 @@ def test_ppo(args=get_args()):
             args.batch_size,
             step_per_collect=args.step_per_collect,
             save_best_fn=save_best_fn,
+            save_checkpoint_fn=save_checkpoint_fn,
             logger=logger,
             test_in_train=False,
             show_progress=args.show_progress,
         )
         pprint.pprint(result)
+        online_policy_test_rewards = logger.retrieve_info_from_log("test/reward")
+        with open(os.path.join(args.logdir, log_name, "online_policy_test_return.json"), "w") as f:
+            json.dump(online_policy_test_rewards, f, indent=4)
+
 
     # Let's watch its performance!
     policy.eval()
