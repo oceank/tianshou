@@ -191,6 +191,7 @@ class Collector(object):
         render: Optional[float] = None,
         no_grad: bool = True,
         gym_reset_kwargs: Optional[Dict[str, Any]] = None,
+        progress_interval: Optional[int] = None,
     ) -> Dict[str, Any]:
         """Collect a specified number of step or episode.
 
@@ -359,6 +360,12 @@ class Collector(object):
                         self.data = self.data[mask]
 
             self.data.obs = self.data.obs_next
+
+            if progress_interval:
+                if n_step and step_count>0 and (step_count%progress_interval)==0:
+                    print(f"Experience Collection Progress: {round(step_count/n_step, 4)*100}/100 ({step_count}/{n_step} steps)")
+                elif n_episode and episode_count>0 and (episode_count%progress_interval):
+                    print(f"Experience Collection Progress: {round(episode_count/n_episode, 4)*100}/100 ({episode_count}/{n_episode} episodes)")
 
             if (n_step and step_count >= n_step) or \
                     (n_episode and episode_count >= n_episode):
