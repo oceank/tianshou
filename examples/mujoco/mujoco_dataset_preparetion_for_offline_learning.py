@@ -153,16 +153,19 @@ def collect_experience(args=get_args()):
 
     # load the policy for experience collection
     checkpoint_epoch = args.checkpoint_step//args.step_per_epoch
-    checkpoint_policy_filepath = os.path.join(log_path, f"checkpoint_epoch{checkpoint_epoch}.pth")
+    checkpoint_policy_filename = f"checkpoint_epoch{checkpoint_epoch}.pth"
+    checkpoint_policy_filepath = os.path.join(log_path, checkpoint_policy_filename)
     print(f"\n[Loading the behavior policy at {checkpoint_policy_filepath}]")
     policy = create_or_load_policy(args, checkpoint_policy_filepath)
     print(f"The behavior policy is loaded")
 
     # collect new experiences and save to file
-    print(f"\n[Collecting new experienes]")
+    use_random_policy = (args.checkpoint_step==0)
+    behavior_policy_name = "random_policy" if use_random_policy else checkpoint_policy_filename
+    print(f"\n[Collecting new experienes using the behavior policy, {behavior_policy_name}]")
     collector = Collector(policy, train_envs, new_buffer)
     steps_of_experiences_to_collect = args.buffer_size - steps_of_experiences_to_copy
-    collector.collect(n_step=steps_of_experiences_to_collect, progress_interval=args.step_per_epoch)
+    collector.collect(n_step=steps_of_experiences_to_collect, progress_interval=args.step_per_epoch, random=use_random_policy)
     #collector.collect(n_step=args.start_timesteps, random=True)
     print(f"Collected new {steps_of_experiences_to_collect} experiences and the new buffer has a size of {len(new_buffer)}")
     # Save the new buffer to file
